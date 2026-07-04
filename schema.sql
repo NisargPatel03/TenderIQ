@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS public.tenders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Submitted', 'Expired')),
+    status TEXT NOT NULL DEFAULT 'Processing' CHECK (status IN ('Active', 'Submitted', 'Expired', 'Processing', 'Failed')),
     deadline TIMESTAMP WITH TIME ZONE,
     file_size BIGINT NOT NULL,
     page_count INT,
