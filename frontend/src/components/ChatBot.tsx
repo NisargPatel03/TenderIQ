@@ -134,8 +134,8 @@ export const ChatBot: React.FC<ChatBotProps> = ({
     }));
 
     try {
-      // Fetch AI response from backend FastAPI endpoint
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/qa`, {
+      const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${baseUrl}/api/qa`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

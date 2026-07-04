@@ -23,7 +23,8 @@ export const GoNoGoScorecard: React.FC<GoNoGoScorecardProps> = ({ tender }) => {
     setResult(null);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/gonogo`, {
+      const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${baseUrl}/api/gonogo`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

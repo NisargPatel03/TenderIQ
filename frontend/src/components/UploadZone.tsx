@@ -194,8 +194,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
       }, 800);
 
       setStatusText("Sending to TenderIQ AI Engine for multi-section parsing...");
-      
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/upload`, {
+      const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+      const response = await fetch(`${baseUrl}/api/upload`, {
         method: "POST",
         body: formData,
       });
