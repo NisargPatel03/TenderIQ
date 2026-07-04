@@ -32,6 +32,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
   const { showToast } = useNotification();
   const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'gonogo'>('analysis');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
+  const [selectedSectionKey, setSelectedSectionKey] = useState<string>('executive_summary');
 
   const sections = tender.analysis_result || {};
 
@@ -261,109 +262,196 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
 
       {/* Main Tab Render */}
       {activeTab === 'analysis' && (
-        <div className="cards-grid">
-          {Object.entries(sectionConfig).map(([key, config]) => {
-            const Icon = config.icon;
-            const data = sections[key];
-            const found = data !== undefined && data !== null && data.found !== false;
-            
-            // Format bullet contents or descriptions
-            const bullets = data?.content || data?.checklist || [];
+        <>
+          {/* Split Screen View for Screen Media */}
+          <div className="analysis-split-container non-printable">
+            {/* Left Sidebar Navigation Menu */}
+            <div className="analysis-nav-menu">
+              {Object.entries(sectionConfig).map(([key, config]) => {
+                const Icon = config.icon;
+                const data = sections[key];
+                const found = data !== undefined && data !== null && data.found !== false;
+                
+                return (
+                  <button
+                    key={key}
+                    className={`analysis-nav-item ${selectedSectionKey === key ? 'active' : ''} ${!found ? 'not-found' : ''}`}
+                    onClick={() => setSelectedSectionKey(key)}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                      <Icon size={16} className="nav-icon" style={{ flexShrink: 0 }} />
+                      <span className="nav-text" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {config.title}
+                      </span>
+                    </div>
+                    <span className={`status-dot ${found ? 'found' : 'missing'}`}></span>
+                  </button>
+                );
+              })}
+            </div>
 
-            return (
-              <div 
-                key={key} 
-                className={`analysis-card ${!found ? 'not-found' : ''}`}
-              >
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <Icon size={18} className="card-icon" />
-                    <span className="card-title">{config.title}</span>
-                  </div>
-                </div>
+            {/* Right Card Detail Pane */}
+            <div className="analysis-card-detail">
+              {(() => {
+                const config = sectionConfig[selectedSectionKey];
+                if (!config) return null;
+                const Icon = config.icon;
+                const data = sections[selectedSectionKey];
+                const found = data !== undefined && data !== null && data.found !== false;
+                const bullets = data?.content || data?.checklist || [];
 
-                <div className="card-body">
-                  {!found ? (
-                    <p style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
-                      Information not found in document
-                    </p>
-                  ) : (
-                    <>
-                      {/* Section-specific detailed fields */}
-                      {key === 'financial_requirements' && (
-                        <div style={{ 
-                          background: 'var(--bg-secondary)', 
-                          padding: '10px', 
-                          borderRadius: '6px', 
-                          marginBottom: '12px',
-                          border: '1px solid var(--border-light)',
-                          fontSize: '12px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px'
-                        }}>
-                          <div>EMD / Bid Security: <strong style={{ color: 'var(--primary)' }}>{data.emd || 'N/A'}</strong></div>
-                          <div>Min Annual Turnover: <strong style={{ color: 'var(--secondary)' }}>{data.turnover || 'N/A'}</strong></div>
-                        </div>
-                      )}
+                return (
+                  <div className={`analysis-card ${!found ? 'not-found' : ''}`} style={{ margin: 0 }}>
+                    <div className="card-header">
+                      <div className="card-title-group">
+                        <Icon size={18} className="card-icon" />
+                        <span className="card-title">{config.title}</span>
+                      </div>
+                    </div>
 
-                      {key === 'contact_details' && (
-                        <div style={{ 
-                          background: 'var(--bg-secondary)', 
-                          padding: '10px', 
-                          borderRadius: '6px', 
-                          marginBottom: '12px',
-                          border: '1px solid var(--border-light)',
-                          fontSize: '12px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px'
-                        }}>
-                          <div>Authority: <strong>{data.authority || 'N/A'}</strong></div>
-                          {data.email && <div>Email: <a href={`mailto:${data.email}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }}>{data.email}</a></div>}
-                          {data.phone && <div>Phone: <strong>{data.phone}</strong></div>}
-                          {data.portal && <div>Portal: <a href={data.portal} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none' }}>Link</a></div>}
-                        </div>
-                      )}
-
-                      {bullets.length > 0 ? (
-                        <ul>
-                          {bullets.map((bullet: string, idx: number) => (
-                            <li key={idx}>{bullet}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p>{data?.description || 'Data extracted.'}</p>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {found && bullets.length > 0 && (
-                  <div className="card-footer non-printable">
-                    <button 
-                      className="card-copy-btn"
-                      onClick={() => {
-                        const copyText = bullets.map((b: string) => `- ${b}`).join('\n');
-                        copyToClipboard(copyText, key);
-                      }}
-                    >
-                      {copiedSection === key ? (
-                        <>
-                          <Check size={12} /> Copied!
-                        </>
+                    <div className="card-body">
+                      {!found ? (
+                        <p style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
+                          Information not found in document
+                        </p>
                       ) : (
                         <>
-                          <Copy size={12} /> Copy Section
+                          {selectedSectionKey === 'financial_requirements' && (
+                            <div style={{ 
+                              background: 'var(--bg-secondary)', 
+                              padding: '12px 14px', 
+                              borderRadius: '6px', 
+                              marginBottom: '14px',
+                              border: '1px solid var(--border-light)',
+                              fontSize: '13px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px'
+                            }}>
+                              <div>EMD / Bid Security: <strong style={{ color: 'var(--primary)' }}>{data.emd || 'N/A'}</strong></div>
+                              <div>Min Annual Turnover: <strong style={{ color: 'var(--secondary)' }}>{data.turnover || 'N/A'}</strong></div>
+                            </div>
+                          )}
+
+                          {selectedSectionKey === 'contact_details' && (
+                            <div style={{ 
+                              background: 'var(--bg-secondary)', 
+                              padding: '12px 14px', 
+                              borderRadius: '6px', 
+                              marginBottom: '14px',
+                              border: '1px solid var(--border-light)',
+                              fontSize: '13px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px'
+                            }}>
+                              <div>Authority: <strong>{data.authority || 'N/A'}</strong></div>
+                              {data.email && <div>Email: <a href={`mailto:${data.email}`} style={{ color: 'var(--secondary)', textDecoration: 'none' }}>{data.email}</a></div>}
+                              {data.phone && <div>Phone: <strong>{data.phone}</strong></div>}
+                              {data.portal && <div>Portal: <a href={data.portal} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'none' }}>Link</a></div>}
+                            </div>
+                          )}
+
+                          {bullets.length > 0 ? (
+                            <ul className="analysis-bullets">
+                              {bullets.map((bullet: string, idx: number) => (
+                                <li key={idx}>{bullet}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p>{data?.description || 'Data extracted.'}</p>
+                          )}
                         </>
                       )}
-                    </button>
+                    </div>
+
+                    {found && bullets.length > 0 && (
+                      <div className="card-footer non-printable">
+                        <button 
+                          className="card-copy-btn"
+                          onClick={() => {
+                            const copyText = bullets.map((b: string) => `- ${b}`).join('\n');
+                            copyToClipboard(copyText, selectedSectionKey);
+                          }}
+                        >
+                          {copiedSection === selectedSectionKey ? (
+                            <>
+                              <Check size={12} /> Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={12} /> Copy Section
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Sequential Fallback for Printing */}
+          <div className="printable-only-container">
+            {Object.entries(sectionConfig).map(([key, config]) => {
+              const Icon = config.icon;
+              const data = sections[key];
+              const found = data !== undefined && data !== null && data.found !== false;
+              const bullets = data?.content || data?.checklist || [];
+
+              return (
+                <div 
+                  key={`print-${key}`} 
+                  className={`analysis-card ${!found ? 'not-found' : ''}`}
+                >
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Icon size={18} className="card-icon" />
+                      <span className="card-title">{config.title}</span>
+                    </div>
+                  </div>
+
+                  <div className="card-body">
+                    {!found ? (
+                      <p style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
+                        Information not found in document
+                      </p>
+                    ) : (
+                      <>
+                        {key === 'financial_requirements' && (
+                          <div style={{ marginBottom: '10px', fontSize: '12px' }}>
+                            <div>EMD / Bid Security: <strong>{data.emd || 'N/A'}</strong></div>
+                            <div>Min Annual Turnover: <strong>{data.turnover || 'N/A'}</strong></div>
+                          </div>
+                        )}
+
+                        {key === 'contact_details' && (
+                          <div style={{ marginBottom: '10px', fontSize: '12px' }}>
+                            <div>Authority: <strong>{data.authority || 'N/A'}</strong></div>
+                            {data.email && <div>Email: {data.email}</div>}
+                            {data.phone && <div>Phone: {data.phone}</div>}
+                            {data.portal && <div>Portal: {data.portal}</div>}
+                          </div>
+                        )}
+
+                        {bullets.length > 0 ? (
+                          <ul>
+                            {bullets.map((bullet: string, idx: number) => (
+                              <li key={idx}>{bullet}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p>{data?.description || 'Data extracted.'}</p>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {activeTab === 'timeline' && (
