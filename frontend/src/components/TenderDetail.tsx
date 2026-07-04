@@ -265,7 +265,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
           {Object.entries(sectionConfig).map(([key, config]) => {
             const Icon = config.icon;
             const data = sections[key];
-            const found = data?.found !== false;
+            const found = data !== undefined && data !== null && data.found !== false;
             
             // Format bullet contents or descriptions
             const bullets = data?.content || data?.checklist || [];
