@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabase';
-import { FileText, Lock, Mail, UserPlus, LogIn, AlertCircle } from 'lucide-react';
+import { Lock, Mail, UserPlus, LogIn, AlertCircle } from 'lucide-react';
+import tenderiqLogo from '../assets/tenderiq_logo.png';
 
 interface AuthProps {
   onAuthSuccess: () => void;
@@ -46,8 +47,8 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
     <div className="auth-container">
       <div className="auth-card">
         <div className="auth-header">
-          <div className="logo-container">
-            <FileText className="logo-icon" size={32} />
+          <div className="logo-container" style={{ flexDirection: 'column', gap: '12px', marginBottom: '8px' }}>
+            <img src={tenderiqLogo} alt="TenderIQ Logo" style={{ width: '80px', height: '80px', borderRadius: '16px', boxShadow: '0 4px 20px rgba(16, 185, 129, 0.25)' }} />
             <span className="logo-text">TenderIQ</span>
           </div>
           <p className="auth-subtitle">

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabase';
-import { FileText, Search, Plus, LogOut, Trash2, Calendar, FileType } from 'lucide-react';
+import { Search, Plus, LogOut, Trash2, Calendar, FileType } from 'lucide-react';
+import tenderiqLogo from '../assets/tenderiq_logo.png';
 
 export interface Tender {
   id: string;
@@ -58,8 +59,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <aside className="sidebar">
       <div className="sidebar-header">
-        <div className="sidebar-logo">
-          <FileText className="logo-icon" size={24} />
+        <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <img src={tenderiqLogo} alt="TenderIQ Logo" style={{ width: '32px', height: '32px', borderRadius: '6px', boxShadow: '0 0 10px rgba(16, 185, 129, 0.2)' }} />
           <span className="logo-text" style={{ fontSize: '20px' }}>TenderIQ</span>
         </div>
 
