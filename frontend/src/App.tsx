@@ -6,7 +6,7 @@ import type { Tender } from './components/Sidebar';
 import { UploadZone } from './components/UploadZone';
 import { TenderDetail } from './components/TenderDetail';
 import { ChatBot } from './components/ChatBot';
-import { FolderOpen, FileCheck, Sparkles, CheckCircle2 } from 'lucide-react';
+import { FolderOpen, FileCheck, Sparkles, CheckCircle2, Menu, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 function App() {
@@ -16,6 +16,7 @@ function App() {
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [activeTenderId, setActiveTenderId] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // 1. Listen to Auth State changes
   useEffect(() => {
@@ -156,7 +157,21 @@ function App() {
   }
 
   return (
-    <div className="app-container">
+    <div className={`app-container ${sidebarOpen ? 'sidebar-open' : ''}`}>
+      {/* Mobile Header Bar */}
+      <div className="mobile-topbar">
+        <button className="mobile-menu-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+          {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+        <span className="mobile-logo-text">TenderIQ</span>
+        <div style={{ width: '20px' }}></div>
+      </div>
+
+      {/* Sidebar Overlay Backdrop */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)}></div>
+      )}
+
       {/* Sidebar List */}
       <Sidebar
         tenders={tenders}
@@ -164,11 +179,13 @@ function App() {
         onSelectTender={(id) => {
           setActiveTenderId(id);
           setShowUploadForm(id === null);
+          setSidebarOpen(false); // Close drawer on selection
         }}
         onDeleteTender={handleDeleteTender}
         onNewTenderClick={() => {
           setActiveTenderId(null);
           setShowUploadForm(true);
+          setSidebarOpen(false); // Close drawer
         }}
         userEmail={session.user.email || 'Guest User'}
       />
