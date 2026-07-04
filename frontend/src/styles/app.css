@@ -602,6 +602,9 @@ button, input, textarea, select {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow: hidden;
 }
 
 /* 9 Section Cards Grid */
@@ -717,6 +720,24 @@ button, input, textarea, select {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.chat-messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.chat-messages::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.2);
+  border-radius: 4px;
+}
+
+.chat-messages::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.4);
 }
 
 .chat-message {

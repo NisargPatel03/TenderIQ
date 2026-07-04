@@ -15,6 +15,70 @@ interface ChatBotProps {
   userId: string;
 }
 
+const renderMarkdown = (text: string) => {
+  if (!text) return null;
+  
+  const lines = text.split('\n');
+  let inList = false;
+  const listItems: React.ReactNode[] = [];
+  const renderedElements: React.ReactNode[] = [];
+
+  const parseLineContent = (lineText: string, key: string) => {
+    const parts = lineText.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, index) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={`${key}-${index}`} style={{ color: '#ffffff', fontWeight: '700' }}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
+  lines.forEach((line, index) => {
+    const trimmed = line.trim();
+    const isBullet = /^[*-]\s+/.test(trimmed);
+    
+    if (isBullet) {
+      const content = trimmed.replace(/^[*-]\s+/, "");
+      listItems.push(
+        <li key={`li-${index}`} style={{ marginBottom: '6px', marginLeft: '16px', listStyleType: 'disc', color: 'var(--text-secondary)' }}>
+          {parseLineContent(content, `li-content-${index}`)}
+        </li>
+      );
+      inList = true;
+    } else {
+      if (inList && listItems.length > 0) {
+        renderedElements.push(
+          <ul key={`ul-${index}`} style={{ margin: '8px 0', paddingLeft: '10px' }}>
+            {[...listItems]}
+          </ul>
+        );
+        listItems.length = 0;
+        inList = false;
+      }
+
+      if (trimmed === '') {
+        renderedElements.push(<div key={`br-${index}`} style={{ height: '8px' }} />);
+      } else {
+        renderedElements.push(
+          <p key={`p-${index}`} style={{ margin: '6px 0', lineHeight: '1.5', color: 'var(--text-secondary)' }}>
+            {parseLineContent(line, `p-content-${index}`)}
+          </p>
+        );
+      }
+    }
+  });
+
+  if (inList && listItems.length > 0) {
+    renderedElements.push(
+      <ul key="ul-final" style={{ margin: '8px 0', paddingLeft: '10px' }}>
+        {[...listItems]}
+      </ul>
+    );
+  }
+
+  return <div>{renderedElements}</div>;
+};
+
 export const ChatBot: React.FC<ChatBotProps> = ({ 
   tenderId, 
   documentText, 
@@ -191,7 +255,7 @@ export const ChatBot: React.FC<ChatBotProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px', fontSize: '11px', fontWeight: 600, color: 'var(--primary)' }}>
                   <Bot size={12} /> TenderIQ AI
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap' }}>{msg.answer}</div>
+                <div>{renderMarkdown(msg.answer)}</div>
               </div>
             </React.Fragment>
           ))
