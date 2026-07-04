@@ -1,8 +1,14 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
+
+# Load environment variables from backend/.env relative to this file
+env_path = Path(__file__).resolve().parent / '.env'
+load_dotenv(dotenv_path=env_path)
 
 from parser import extract_content, ExtractionError
 from gemini import GeminiClient
