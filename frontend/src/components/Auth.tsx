@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { supabase } from '../utils/supabase';
 import { Lock, Mail, UserPlus, LogIn, AlertCircle } from 'lucide-react';
 import tenderiqLogo from '../assets/tenderiq_logo.png';
+import { useNotification } from './NotificationProvider';
 
 interface AuthProps {
   onAuthSuccess: () => void;
 }
 
 export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
+  const { showToast } = useNotification();
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +28,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
           password,
         });
         if (signUpError) throw signUpError;
-        alert("Registration successful! Please check your email for a verification link or log in if auto-confirmed.");
+        showToast("Registration successful! Please check your email for verification.", "success");
         setIsSignUp(false);
       } else {
         const { error: signInError } = await supabase.auth.signInWithPassword({

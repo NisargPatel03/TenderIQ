@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { TimelineVisualizer } from './TimelineVisualizer.tsx';
 import { GoNoGoScorecard } from './GoNoGoScorecard.tsx';
+import { useNotification } from './NotificationProvider';
 
 interface TenderDetailProps {
   tender: {
@@ -28,6 +29,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
   onDelete, 
   onUpdateStatus 
 }) => {
+  const { showToast } = useNotification();
   const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'gonogo'>('analysis');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
 
@@ -81,7 +83,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
     });
 
     navigator.clipboard.writeText(fullTextReport);
-    alert("Full analysis report copied to clipboard!");
+    showToast("Full analysis report copied to clipboard!", "success");
   };
 
   const handleExportPDF = () => {

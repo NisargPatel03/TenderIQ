@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { supabase } from '../utils/supabase';
 import { Search, Plus, LogOut, Trash2, Calendar, FileType } from 'lucide-react';
 import tenderiqLogo from '../assets/tenderiq_logo.png';
+import { useNotification } from './NotificationProvider';
 
 export interface Tender {
   id: string;
@@ -32,14 +33,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNewTenderClick,
   userEmail,
 }) => {
+  const { showConfirm } = useNotification();
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('All');
 
-  const handleLogout = async () => {
-    if (confirm("Are you sure you want to sign out of TenderIQ?")) {
-      await supabase.auth.signOut();
-      window.location.reload();
-    }
+  const handleLogout = () => {
+    showConfirm({
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out of TenderIQ?',
+      confirmText: 'Sign Out',
+      isDanger: true,
+      onConfirm: async () => {
+        await supabase.auth.signOut();
+        window.location.reload();
+      }
+    });
   };
 
   const filteredTenders = tenders.filter((t) => {
@@ -119,9 +127,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (confirm(`Are you sure you want to delete "${tender.name}"?`)) {
-                      onDeleteTender(tender.id);
-                    }
+                    showConfirm({
+                      title: 'Delete Tender Audit',
+                      message: `Are you sure you want to permanently delete "${tender.name}"? This action cannot be undone.`,
+                      confirmText: 'Delete',
+                      isDanger: true,
+                      onConfirm: () => {
+                        onDeleteTender(tender.id);
+                      }
+                    });
                   }}
                   style={{
                     background: 'transparent',
