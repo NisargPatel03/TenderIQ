@@ -22,6 +22,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   const [localError, setLocalError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -33,12 +34,95 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     }
   };
 
+  // Helper to recursively extract files from folders dropped or uploaded
+  const traverseAndAddItems = async (items: DataTransferItemList | DataTransferItem[]) => {
+    setLocalError(null);
+    const validExtensions = ['pdf', 'docx', 'txt'];
+    const extractedFiles: File[] = [];
+    let hasInvalid = false;
+
+    const traverseEntry = (entry: any): Promise<void> => {
+      return new Promise((resolve) => {
+        if (entry.isFile) {
+          entry.file((file: File) => {
+            const fileExtension = file.name.split('.').pop()?.toLowerCase();
+            if (fileExtension && validExtensions.includes(fileExtension)) {
+              extractedFiles.push(file);
+            } else {
+              hasInvalid = true;
+            }
+            resolve();
+          }, () => resolve());
+        } else if (entry.isDirectory) {
+          const dirReader = entry.createReader();
+          const readAllEntries = (): Promise<void> => {
+            return new Promise((resolveRead) => {
+              dirReader.readEntries(async (entries: any[]) => {
+                if (entries.length === 0) {
+                  resolveRead();
+                } else {
+                  const promises = entries.map(ent => traverseEntry(ent));
+                  await Promise.all(promises);
+                  await readAllEntries();
+                  resolveRead();
+                }
+              }, () => resolveRead());
+            });
+          };
+          readAllEntries().then(() => resolve());
+        } else {
+          resolve();
+        }
+      });
+    };
+
+    const entryPromises = Array.from(items).map((item) => {
+      if (typeof item.webkitGetAsEntry === 'function') {
+        const entry = item.webkitGetAsEntry();
+        if (entry) {
+          return traverseEntry(entry);
+        }
+      }
+      const file = item.getAsFile();
+      if (file) {
+        const fileExtension = file.name.split('.').pop()?.toLowerCase();
+        if (fileExtension && validExtensions.includes(fileExtension)) {
+          extractedFiles.push(file);
+        } else {
+          hasInvalid = true;
+        }
+      }
+      return Promise.resolve();
+    });
+
+    await Promise.all(entryPromises);
+
+    if (hasInvalid) {
+      setLocalError("Some files/folders were skipped. Only PDF, DOCX, or TXT formats are allowed.");
+    }
+
+    if (extractedFiles.length > 0) {
+      setFiles((prev) => {
+        const updated = [...prev];
+        extractedFiles.forEach((file) => {
+          if (!updated.some(f => f.name === file.name)) {
+            updated.push(file);
+          }
+        });
+        return updated;
+      });
+      setRawText('');
+    }
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      traverseAndAddItems(e.dataTransfer.items);
+    } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       validateAndSetFiles(Array.from(e.dataTransfer.files));
     }
   };
@@ -200,12 +284,42 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
               accept=".pdf,.docx,.txt"
               multiple
             />
+            <input
+              ref={folderInputRef}
+              type="file"
+              style={{ display: 'none' }}
+              onChange={handleFileChange}
+              {...({
+                webkitdirectory: "",
+                directory: ""
+              } as any)}
+              multiple
+            />
             <UploadCloud size={48} className="upload-icon" />
-            <p style={{ fontWeight: 600, fontSize: '14px' }}>
-              Drag and drop files here, or <span style={{ color: 'var(--primary)' }}>browse</span>
+            <p style={{ fontWeight: 600, fontSize: '14px', lineHeight: '1.6' }}>
+              Drag and drop files/folders here, or{' '}
+              <span 
+                style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  fileInputRef.current?.click();
+                }}
+              >
+                browse files
+              </span>{' '}
+              or{' '}
+              <span 
+                style={{ color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  folderInputRef.current?.click();
+                }}
+              >
+                browse folder
+              </span>
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              Supports multiple PDF, DOCX, TXT files
+              Supports multiple PDF, DOCX, TXT files or entire directories
             </p>
           </div>
 
