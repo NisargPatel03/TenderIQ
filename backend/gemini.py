@@ -222,19 +222,22 @@ JSON Structure:
         return chunks
 
     def generate_embeddings(self, chunks: list[str]) -> list[list[float]]:
-        """Calls Google Generative AI to get embeddings for chunks of text."""
+        """Calls Google Generative AI to get embeddings for each chunk of text."""
         if not chunks:
             return []
-        try:
-            response = genai.embed_content(
-                model="models/text-embedding-004",
-                content=chunks,
-                task_type="retrieval_document"
-            )
-            # Response contains a list of embeddings under 'embeddings' key
-            return [list(e) for e in response['embeddings']]
-        except Exception as e:
-            print(f"Error generating embeddings: {e}")
-            # Return zero vectors as fallback so database insertion doesn't fail
-            return [[0.0] * 768 for _ in chunks]
+        embeddings = []
+        for chunk in chunks:
+            try:
+                response = genai.embed_content(
+                    model="models/embedding-001",
+                    content=chunk,
+                    task_type="retrieval_document"
+                )
+                # embedding-001 returns a flat list under 'embedding'
+                embeddings.append(list(response['embedding']))
+            except Exception as e:
+                print(f"Error generating embedding for chunk: {e}")
+                # Fallback: zero vector so DB insert doesn't fail
+                embeddings.append([0.0] * 768)
+        return embeddings
 

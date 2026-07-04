@@ -63,8 +63,24 @@ function App() {
   };
 
   const handleUploadSuccess = async (completedTender: any) => {
-    // Backend is synchronous — tender is fully processed and Active when this fires
-    setTenders((prev) => [completedTender, ...prev]);
+    // Reload the full list from Supabase so orphaned 'Processing' records
+    // from previous failed attempts don't show as duplicates.
+    try {
+      const { data, error } = await supabase
+        .from('tenders')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        setTenders(data);
+      }
+    } catch {
+      // Fallback: just prepend if the refresh fails
+      setTenders((prev) => {
+        const filtered = prev.filter((t) => t.id !== completedTender.id);
+        return [completedTender, ...filtered];
+      });
+    }
+
     setActiveTenderId(completedTender.id);
     setShowUploadForm(false);
 
