@@ -1,15 +1,16 @@
 # TenderIQ - AI-Powered Procurement Intelligence
 
-TenderIQ is a premium, enterprise-grade bidding intelligence dashboard built for corporate procurement professionals and bid managers. It uses Google Gemini 1.5 Flash to automatically parse, audit, and extract key insights from massive government and corporate RFP/tender documents (up to 500+ pages) in seconds.
+TenderIQ is a premium, enterprise-grade bidding intelligence dashboard built for corporate procurement professionals and bid managers. It uses **Google Gemini 2.5 Flash** to automatically parse, audit, and extract key insights from massive government and corporate RFP/tender documents (up to 500+ pages) in seconds.
 
 ---
 
 ## 🚀 Key Features
 
-### 1. Document Upload & Extraction
-* **Multi-Format Support:** Drag-and-drop or select PDF, DOCX, or TXT documents.
-* **Direct Pasting:** Paste raw tender text directly into a text area.
-* **Page & Size Previews:** Real-time upload metadata and progress visualization.
+### 1. Document Upload & Ingestion Engine
+* **Multi-File Selection:** Ingests multiple tender files simultaneously, merges them in the backend using `DOCUMENT: filename` boundaries, and runs a unified AI compliance analysis.
+* **Direct Folder Uploads:** Includes a dedicated **"browse folder"** directory picker using the `webkitdirectory` HTML5 attribute.
+* **Drag-and-Drop Directory Traversal:** Recursively traverses nested drag-and-dropped directories, extracts supported files (`.pdf`, `.docx`, `.txt`), and automatically filters out unsupported system files.
+* **Direct Pasting:** Option to paste raw tender text directly into a text input area.
 
 ### 2. Multi-Section AI Auto-Extraction
 Extracts and isolates 9 critical compliance areas, including:
@@ -23,27 +24,34 @@ Extracts and isolates 9 critical compliance areas, including:
 8. **Evaluation Criteria:** Score weights and technical scoring methods.
 9. **Contact Details:** Authority emails, phone numbers, and portals.
 
-### 3. Chronological Timeline Visualizer
+### 3. Split-Tabbed Analysis View (Obsidian-Style Layout)
+* **Interactive Navigation Sidebar (Left):** Toggle between the 9 compliance categories with instant panel swaps. Displays status badges (Green dot for found content, Red dot for missing details) to show document audit coverage.
+* **Premium Detail Card Pane (Right):** Displays the active card in full width with smooth glassmorphic shadow backings.
+* **Height Capping:** Limits lists to a maximum height of `340px` with custom-styled scrollbars to keep layout elements locked in the viewport.
+* **Live Search & Filter:** A search input field filters long lists of clauses and checklists in real-time.
+* **Search-Aware Copying:** The "Copy Section" function copies only the filtered checklist items if a search query is active.
+
+### 4. Chronological Timeline Visualizer
 * Translates extracted deadlines into a visual timeline roadmap.
 * Chronologically sorts milestones to ensure no bid pre-meetings or submissions are missed.
 
-### 4. Interactive Go-NoGo Scorecard
+### 5. Interactive Go-NoGo Scorecard
 * Audits your company capabilities against tender requirements.
 * Paste your corporate profile (turnover, certifications, experience) to receive an AI suitability score (0-100), strength lists, and compliance gaps.
 
-### 5. Contextual Q&A Bidding Assistant
+### 6. Contextual Q&A Bidding Assistant
 * Chat with the document using free-form follow-up questions.
 * Uses conversation memory and stores past dialogues in Supabase for persistence.
 
-### 6. Professional Report Exporting
+### 7. Professional Report Exporting
 * **Export Word:** Formats and downloads compliance audit summaries as editable MS Word `.doc` files.
-* **Export PDF:** Triggers a print-ready custom layout to print or save reports.
+* **Export PDF & Print Overrides:** Under print media rules (`@media print`), the interactive split screen is hidden, and the sequential list displays, ensuring that "Export PDF" or normal print commands download a complete 9-section report.
 
 ---
 
 ## 🛠️ Technical Stack
-* **Frontend:** React, TypeScript, Vite, custom Vanilla CSS.
-* **Backend:** FastAPI (Python), Uvicorn, Google Gemini 1.5 Flash SDK, PyMuPDF, python-docx.
+* **Frontend:** React 18+, TypeScript, Vite, custom Vanilla CSS.
+* **Backend:** FastAPI (Python 3.10+), Uvicorn, Google Gemini 2.5 Flash SDK, PyMuPDF, python-docx.
 * **Database & Auth:** Supabase (PostgreSQL with Row-Level Security policies).
 
 ---
