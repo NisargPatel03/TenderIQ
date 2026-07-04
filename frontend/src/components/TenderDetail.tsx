@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   FileText, Calendar, ShieldCheck, Briefcase, DollarSign, 
   Files, ShieldAlert, Award, PhoneCall, Copy, Check, FileDown, 
@@ -33,6 +33,11 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
   const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'gonogo'>('analysis');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [selectedSectionKey, setSelectedSectionKey] = useState<string>('executive_summary');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+
+  useEffect(() => {
+    setSearchTerm('');
+  }, [selectedSectionKey]);
 
   const sections = tender.analysis_result || {};
 
@@ -300,16 +305,44 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                 const found = data !== undefined && data !== null && data.found !== false;
                 const bullets = data?.content || data?.checklist || [];
 
+                // Filter bullets by search term
+                const filteredBullets = bullets.filter((bullet: string) =>
+                  bullet.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+
                 return (
                   <div className={`analysis-card ${!found ? 'not-found' : ''}`} style={{ margin: 0 }}>
-                    <div className="card-header">
-                      <div className="card-title-group">
-                        <Icon size={18} className="card-icon" />
-                        <span className="card-title">{config.title}</span>
+                    <div className="card-header" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                        <div className="card-title-group">
+                          <Icon size={18} className="card-icon" />
+                          <span className="card-title">{config.title}</span>
+                        </div>
                       </div>
+                      
+                      {found && bullets.length > 5 && (
+                        <div style={{ width: '100%' }}>
+                          <input
+                            type="text"
+                            placeholder={`Search in ${config.title.toLowerCase()}...`}
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            style={{
+                              width: '100%',
+                              padding: '8px 12px',
+                              background: 'var(--bg-secondary)',
+                              border: '1px solid var(--border-light)',
+                              borderRadius: '6px',
+                              color: '#ffffff',
+                              fontSize: '12px',
+                              outline: 'none'
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
 
-                    <div className="card-body">
+                    <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                       {!found ? (
                         <p style={{ fontStyle: 'italic', color: 'var(--text-muted)' }}>
                           Information not found in document
@@ -321,7 +354,6 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                               background: 'var(--bg-secondary)', 
                               padding: '12px 14px', 
                               borderRadius: '6px', 
-                              marginBottom: '14px',
                               border: '1px solid var(--border-light)',
                               fontSize: '13px',
                               display: 'flex',
@@ -338,7 +370,6 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                               background: 'var(--bg-secondary)', 
                               padding: '12px 14px', 
                               borderRadius: '6px', 
-                              marginBottom: '14px',
                               border: '1px solid var(--border-light)',
                               fontSize: '13px',
                               display: 'flex',
@@ -353,11 +384,26 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                           )}
 
                           {bullets.length > 0 ? (
-                            <ul className="analysis-bullets">
-                              {bullets.map((bullet: string, idx: number) => (
-                                <li key={idx}>{bullet}</li>
-                              ))}
-                            </ul>
+                            <div 
+                              className="custom-scrollbar"
+                              style={{ 
+                                maxHeight: '340px', 
+                                overflowY: 'auto', 
+                                paddingRight: '8px' 
+                              }}
+                            >
+                              {filteredBullets.length > 0 ? (
+                                <ul className="analysis-bullets">
+                                  {filteredBullets.map((bullet: string, idx: number) => (
+                                    <li key={idx}>{bullet}</li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p style={{ fontStyle: 'italic', color: 'var(--text-muted)', margin: '10px 0' }}>
+                                  No matching clauses found.
+                                </p>
+                              )}
+                            </div>
                           ) : (
                             <p>{data?.description || 'Data extracted.'}</p>
                           )}
@@ -365,12 +411,12 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                       )}
                     </div>
 
-                    {found && bullets.length > 0 && (
+                    {found && filteredBullets.length > 0 && (
                       <div className="card-footer non-printable">
                         <button 
                           className="card-copy-btn"
                           onClick={() => {
-                            const copyText = bullets.map((b: string) => `- ${b}`).join('\n');
+                            const copyText = filteredBullets.map((b: string) => `- ${b}`).join('\n');
                             copyToClipboard(copyText, selectedSectionKey);
                           }}
                         >
