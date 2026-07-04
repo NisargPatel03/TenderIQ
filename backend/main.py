@@ -251,8 +251,9 @@ def ask_question(
 ):
     """
     Answers a free-form user query.
-    Uses pgvector RAG similarity search if tender_id is supplied,
-    otherwise falls back to the full document_text.
+    Primary context: analysis_result (structured AI extraction) fetched from DB.
+    Secondary context: pgvector RAG chunks (if tender_id provided).
+    Final fallback: raw document_text from the request body.
     """
     if not gemini_client:
         raise HTTPException(
@@ -260,37 +261,56 @@ def ask_question(
             detail="Gemini API Client is not configured.",
         )
 
-    context = ""
+    rag_context = ""
+    analysis_result = None
 
     if request.tender_id:
         try:
             supabase = get_supabase(authorization)
-            query_embeddings = gemini_client.generate_embeddings([request.question])
-            if query_embeddings:
-                rpc_res = supabase.rpc(
-                    "match_tender_chunks",
-                    {
-                        "query_embedding": query_embeddings[0],
-                        "match_threshold": 0.2,
-                        "match_count": 5,
-                        "filter_tender_id": request.tender_id,
-                    },
-                ).execute()
-                if rpc_res.data:
-                    context = "\n\n".join(
-                        row["chunk_content"] for row in rpc_res.data
-                    )
-        except Exception as err:
-            print(f"RAG search failed, falling back to document_text: {err}")
 
-    if not context:
-        context = request.document_text[:100_000]
+            # ── Fetch the structured analysis_result from the tender row ──────
+            tender_row = (
+                supabase.table("tenders")
+                .select("analysis_result")
+                .eq("id", request.tender_id)
+                .single()
+                .execute()
+            )
+            if tender_row.data:
+                analysis_result = tender_row.data.get("analysis_result")
+
+            # ── RAG vector search for supplementary chunks ────────────────────
+            try:
+                query_embeddings = gemini_client.generate_embeddings([request.question])
+                if query_embeddings:
+                    rpc_res = supabase.rpc(
+                        "match_tender_chunks",
+                        {
+                            "query_embedding": query_embeddings[0],
+                            "match_threshold": 0.25,
+                            "match_count": 5,
+                            "filter_tender_id": request.tender_id,
+                        },
+                    ).execute()
+                    if rpc_res.data:
+                        rag_context = "\n\n".join(
+                            row["chunk_content"] for row in rpc_res.data
+                        )
+            except Exception as rag_err:
+                print(f"RAG search skipped: {rag_err}")
+
+        except Exception as err:
+            print(f"Could not fetch tender data for QA: {err}")
+
+    # Raw text fallback (either RAG chunks or original document_text)
+    raw_context = rag_context or request.document_text[:80_000]
 
     try:
         answer = gemini_client.ask_tender_question(
-            document_text=context,
+            document_text=raw_context,
             question=request.question,
             history=request.history,
+            analysis_result=analysis_result,
         )
         return {"answer": answer}
     except Exception as e:

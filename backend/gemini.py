@@ -110,36 +110,100 @@ JSON Structure:
                 "executive_summary": {"found": False, "content": ["Error extracting summary data."]}
             }
 
-    def ask_tender_question(self, document_text: str, question: str, history: list[dict]) -> str:
-        """Answers a user's question about the tender utilizing the document context and past chat history."""
-        # Truncate document text to stay within bounds
-        truncated_text = document_text[:1000000]
-        
+    def ask_tender_question(
+        self,
+        document_text: str,
+        question: str,
+        history: list[dict],
+        analysis_result: dict = None
+    ) -> str:
+        """
+        Answers a user's question about the tender.
+        Uses analysis_result (structured AI extraction) as the primary
+        knowledge source, supplemented by raw document_text / RAG chunks.
+        """
         # Build history context
         history_context = ""
         for chat in history:
             q = chat.get("question", "")
             a = chat.get("answer", "")
             history_context += f"User: {q}\nAI: {a}\n\n"
-            
-        prompt = f"""
-You are a professional bidding consultant answering a user's question about a specific tender.
-Below is the full text of the tender:
----
-{truncated_text}
----
 
-Here is the conversation history so far:
-{history_context}
+        # ── Primary: Structured analysis knowledge block ──────────────────────
+        analysis_block = ""
+        if analysis_result:
+            import json as _json
+            section_labels = {
+                "executive_summary":     "Executive Summary",
+                "eligibility_criteria":  "Eligibility Criteria",
+                "key_dates":             "Key Dates & Deadlines",
+                "scope_of_work":         "Scope of Work",
+                "financial_requirements":"Financial Requirements",
+                "required_documents":    "Required Documents",
+                "risks_penalties":       "Risks & Penalties",
+                "evaluation_criteria":   "Evaluation Criteria",
+                "contact_details":       "Contact Details",
+            }
+            lines = []
+            for key, label in section_labels.items():
+                section = analysis_result.get(key)
+                if not section:
+                    continue
+                if section.get("found"):
+                    content = section.get("content", [])
+                    if isinstance(content, list):
+                        content_str = "\n  - " + "\n  - ".join(str(c) for c in content)
+                    else:
+                        content_str = str(content)
+                    lines.append(f"### {label}\n{content_str}")
+                    # Special nested fields
+                    for extra_key in ("deadline", "emd", "turnover", "authority", "email", "phone"):
+                        val = section.get(extra_key)
+                        if val:
+                            lines.append(f"  {extra_key.capitalize()}: {val}")
+            analysis_block = "\n\n".join(lines)
 
-User's Question: {question}
+        # ── Supplementary: raw text / RAG chunks ─────────────────────────────
+        raw_block = document_text[:80_000] if document_text else ""
 
-Please answer the user's question directly, clearly, and professional based on the tender text. 
-- Quote or reference sections where possible.
-- If the answer cannot be found in the text, clearly state: "I couldn't find this information in the tender document."
-- Keep formatting clean using markdown bullet points or bold text if helpful.
-"""
-        
+        # ── Build the full prompt ─────────────────────────────────────────────
+        prompt_parts = [
+            "You are a professional bidding consultant answering a user's question about a specific tender.\n",
+        ]
+
+        if analysis_block:
+            prompt_parts.append(
+                "Below is the AI-extracted structured compliance data from the tender:\n"
+                "---\n"
+                f"{analysis_block}\n"
+                "---\n"
+            )
+
+        if raw_block:
+            prompt_parts.append(
+                "Additionally, here is a portion of the raw tender text for reference:\n"
+                "---\n"
+                f"{raw_block}\n"
+                "---\n"
+            )
+
+        if history_context:
+            prompt_parts.append(
+                f"Conversation history so far:\n{history_context}"
+            )
+
+        prompt_parts.append(
+            f"User's Question: {question}\n\n"
+            "Instructions:\n"
+            "- Answer directly and professionally based on the tender data above.\n"
+            "- Reference specific sections, dates, or numbers wherever possible.\n"
+            "- Use markdown bullet points or bold text for clarity.\n"
+            "- If the answer is genuinely not present in any of the provided data, "
+            "say: \"This information was not found in the analyzed tender documents.\""
+        )
+
+        prompt = "\n".join(prompt_parts)
+
         try:
             response = self.model.generate_content(
                 prompt,
@@ -148,6 +212,7 @@ Please answer the user's question directly, clearly, and professional based on t
             return response.text.strip()
         except Exception as e:
             return f"Error querying AI Engine: {str(e)}"
+
 
     def evaluate_go_nogo(self, analysis_result: dict, company_profile: str) -> dict:
         """Evaluates bidding suitability by matching company profile against tender details using AI."""
