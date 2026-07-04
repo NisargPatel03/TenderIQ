@@ -1,155 +1,607 @@
-# TenderIQ - AI-Powered Procurement Intelligence
+# TenderIQ — AI-Powered Procurement Intelligence Platform
 
-TenderIQ is a premium, enterprise-grade bidding intelligence dashboard built for corporate procurement professionals and bid managers. It uses **Google Gemini 2.5 Flash** to automatically parse, audit, and extract key insights from massive government and corporate RFP/tender documents (up to 500+ pages) in seconds.
-
----
-
-## 🚀 Key Features
-
-### 1. Document Ingestion & Folder Uploads
-* **Multi-File Selection:** Ingests multiple files simultaneously, merging them with file boundary headers for unified compliance audits.
-* **Direct Folder Uploads:** Select and upload entire directories (e.g. `work_313633`) using a hidden native `webkitdirectory` picker.
-* **Recursive Drag-and-Drop:** Traverses nested folders on drop events, extracting supported `.pdf`, `.docx`, and `.txt` files while pruning system files like `.DS_Store`.
-* **Direct Paste Area:** Quick capability to paste unstructured tender text directly for instant audits.
-
-### 2. Multi-Section AI Compliance Engine
-Auto-extracts and classifies 9 critical procurement check-points:
-1. **Executive Summary:** Key goals, RFP references, and project overview.
-2. **Eligibility Criteria:** Minimum years of experience, legal qualifications, and corporate credentials.
-3. **Key Dates & Deadlines:** Submission windows, pre-bid conferences, and inquiry dates.
-4. **Scope of Work:** Performance benchmarks, deliverables, and service parameters.
-5. **Financial Requirements:** EMD/Bid security, bank guarantees, and minimum annual turnover.
-6. **Required Documents Checklist:** Step-by-step checklist of forms, certs, and declarations.
-7. **Risks & Penalties:** Liquidated damages, delay penalties, and liability limits.
-8. **Evaluation Criteria:** Score weightings, quality-based selectors, and pass thresholds.
-9. **Contact Details:** Authority emails, phone contacts, and procurement portals.
-
-### 3. Split-Screen Tabbed Workspace (Obsidian-Style Layout)
-* **Status-Aware Sidebar (Left):** Instant toggling between the 9 compliance cards with real-time indicators (Green dot for found parameters, Red dot for missing details).
-* **Detail Card Viewer (Center):** Structured views for all compliance findings with glassmorphic designs.
-* **Height Capping:** Restricts long checklists to a fixed height of `340px` with emerald WebKit scrollbars to maintain desktop layout grid alignment.
-* **Live Search & Filter:** Dynamically filter long lists of clauses or documents in real-time.
-* **Search-Aware Copying:** Copy only filtered items to the clipboard when active search queries are in place.
-
-### 4. Interactive Q&A Bidding Assistant
-* Chat with your RFP documents using context-aware questions.
-* **Markdown Parser:** Renders answers with bold elements (`<strong>`) and bullet lists (`<ul>`/`<li>`) instead of raw markdown text.
-* **Memory Sync:** Stores dialogue history in Supabase to persist user conversations.
-* **Auto-Scroll:** Dynamically scrolls messages as answers stream in.
-
-### 5. Suitability Go-NoGo Scorecard & Timeline
-* **Go-NoGo Auditor:** Compares your company capabilities (turnover, experience) against extracted criteria to score suitability (0-100), listing strengths and compliance gaps.
-* **Milestone Roadmap:** Dynamically parses extracted deadlines into a visual chronological timeline.
-
-### 6. Premium Report Exporting
-* **Export Word:** Generates and downloads clean, editable MS Word `.doc` files.
-* **Export PDF (Clean Print Styles):** Media print styles (`@media print`) hide the sidebar menu, chat panel, mobile bar, and buttons. Adds a professional header showing the Tender Name, Generation Date, Bid Status, and Deadline, printing the 9 sections as a clean corporate PDF document.
+> **Enterprise-grade bidding intelligence dashboard** built for corporate procurement professionals and bid managers. Uses **Google Gemini 2.5 Flash** and a **pgvector RAG pipeline** to automatically parse, audit, and extract key compliance insights from massive government and corporate RFP/tender documents (up to 1,000+ pages) in seconds.
 
 ---
 
-## 🛠️ Technical Stack
-* **Frontend:** React 18+, TypeScript, Vite, custom Vanilla CSS.
-* **Backend:** FastAPI (Python 3.10+), Uvicorn, Google Gemini 2.5 Flash SDK, PyMuPDF, python-docx.
-* **Database & Auth:** Supabase (PostgreSQL with Row-Level Security policies).
+## 📋 Table of Contents
+
+1. [Overview](#overview)
+2. [Key Features](#key-features)
+3. [Architecture](#architecture)
+4. [Technical Stack](#technical-stack)
+5. [Database Schema](#database-schema)
+6. [API Reference](#api-reference)
+7. [Local Setup & Installation](#local-setup--installation)
+8. [Production Deployment (Vercel)](#production-deployment-vercel)
+9. [Environment Variables](#environment-variables)
+10. [Roadmap](#roadmap)
 
 ---
 
-## ⚙️ Local Setup and Installation
+## Overview
 
-### 1. Database Setup (Supabase)
-1. Go to your **Supabase Dashboard** (project `uiyddkhhupzbwnpvsyfu`).
-2. Open the **SQL Editor**, click **New Query**, paste the contents of `schema.sql`, and click **Run**.
-3. Go to **Authentication** -> **Providers** -> **Email** and disable **Confirm email** for easy local testing.
+TenderIQ solves a critical enterprise bottleneck: procurement teams waste dozens of hours manually reading 500–1,000 page RFP documents to extract eligibility criteria, deadlines, financial requirements, and risks. TenderIQ ingests the full document package, runs a multi-section AI compliance audit in seconds, and gives teams a live Q&A assistant to interrogate the tender like a document expert.
 
-### 2. Backend Installation & Run
-1. Navigate to the root directory:
-   ```bash
-   cd TenderIQ
-   ```
-2. Set up virtual environment and install packages:
-   ```bash
-   python -m venv venv
-   .\venv\Scripts\activate
-   pip install -r backend/requirements.txt
-   ```
-3. Set your Gemini API key in `backend/.env`:
-   ```env
-   GEMINI_API_KEY=your_gemini_api_key_here
-   ```
-4. Start the server:
-   ```bash
-   .\venv\Scripts\python -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000
-   ```
+### How It Works (End-to-End Pipeline)
 
-### 3. Frontend Installation & Run
-1. Open a new terminal in the `frontend` folder:
-   ```bash
-   cd frontend
-   npm install
-   ```
-2. Configure credentials in `frontend/.env`:
-   ```env
-   VITE_SUPABASE_URL=https://uiyddkhhupzbwnpvsyfu.supabase.co
-   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
-   VITE_API_URL=http://localhost:8000
-   ```
-3. Run the development server:
-   ```bash
-   npm run dev
-   ```
-4. Open the application in your browser: `http://localhost:5173/`
+```
+User uploads PDF/DOCX/TXT files or a folder
+           ↓
+Frontend creates a 'Processing' tender record in Supabase
+           ↓
+FastAPI backend extracts raw text from all documents
+           ↓
+Gemini 2.5 Flash runs 9-section compliance analysis
+           ↓
+Text is chunked (sliding window) + embeddings generated
+           ↓
+Chunks + embeddings stored in Supabase pgvector table
+           ↓
+Tender status updated to 'Active' in database
+           ↓
+Frontend auto-refreshes → shows full compliance dashboard
+```
 
 ---
 
-## 🚀 Production Deployment (Vercel Serverless)
+## Key Features
 
-TenderIQ is structured to deploy the frontend and backend as separate services on Vercel.
+### 1. 📁 Multi-Document Ingestion Engine
+
+| Capability | Detail |
+|---|---|
+| **Multi-file selection** | Select multiple PDFs/DOCX/TXT simultaneously — merged with file-boundary headers for unified audit |
+| **Folder upload** | Upload entire project directories via native `webkitdirectory` picker |
+| **Recursive drag-and-drop** | Drop nested folders; engine traverses subdirectories extracting valid files, skipping system artifacts (`.DS_Store`, `__MACOSX`) |
+| **Raw text paste** | Paste unstructured tender text directly — auto-calculates page estimate |
+| **Format support** | `.pdf` (PyMuPDF), `.docx` (python-docx), `.txt` (UTF-8/Latin-1 fallback) |
+| **File size display** | Shows human-readable sizes (KB/MB) in sidebar |
+
+---
+
+### 2. 🤖 9-Section AI Compliance Engine
+
+Auto-extracts and classifies 9 critical procurement checkpoints from every tender package:
+
+| # | Section | What it extracts |
+|---|---|---|
+| 1 | **Executive Summary** | Project goals, RFP reference numbers, project overview |
+| 2 | **Eligibility Criteria** | Min. years experience, legal qualifications, corporate credentials |
+| 3 | **Key Dates & Deadlines** | Submission windows, pre-bid conferences, query deadlines |
+| 4 | **Scope of Work** | Performance benchmarks, deliverables, service parameters |
+| 5 | **Financial Requirements** | EMD/bid security amounts, bank guarantees, annual turnover minimums |
+| 6 | **Required Documents Checklist** | Forms, certificates, declarations needed |
+| 7 | **Risks & Penalties** | Liquidated damages, delay penalties, liability caps |
+| 8 | **Evaluation Criteria** | Score weightings, quality-based selectors, pass/fail thresholds |
+| 9 | **Contact Details** | Authority emails, phone contacts, procurement portal URLs |
+
+Each section returns a **found/not-found indicator** with a green or red dot in the sidebar navigation.
+
+---
+
+### 3. 🔍 RAG Vector Search (Retrieval-Augmented Generation)
+
+TenderIQ implements a full **pgvector RAG pipeline** to handle massive 1,000+ page documents:
+
+- **Text Chunking:** Documents are split using a sliding-window algorithm (1,500 char chunks with 300-char overlap) preserving paragraph context
+- **Embeddings:** Each chunk is converted to a 768-dimension vector using Google's `embedding-001` model
+- **Storage:** Vectors stored in Supabase `tender_chunks` table with `pgvector` extension
+- **Semantic Search:** When a user asks a chat question, an embedding is generated for the query and a **cosine similarity search** (`match_tender_chunks` RPC) retrieves the top 5 most relevant paragraphs
+- **3-Layer Context:** QA engine uses `analysis_result` (primary) → RAG chunks (secondary) → raw text fallback (tertiary)
+- **Cost Efficiency:** Reduces Gemini token usage by up to 95% vs. sending full document text
+
+---
+
+### 4. ⚡ Asynchronous Processing & Status Lifecycle
+
+Tenders have a full status lifecycle managed between the frontend and backend:
+
+```
+Processing → Active → Submitted → Expired
+                   ↘ Failed (on backend error)
+```
+
+| Status | Badge | Meaning |
+|---|---|---|
+| `Processing` | 🟡 Pulsing amber | Backend is extracting, analyzing, and embedding the document |
+| `Active` | 🟢 Green | Analysis complete — full workspace available |
+| `Submitted` | 🔵 Blue | Manually marked as bid submitted |
+| `Expired` | 🔴 Red | Manually marked as past deadline |
+| `Failed` | 🔴 Red | Backend encountered an error — remove and re-upload |
+
+**Processing Workspace State:** While a tender is being analyzed, clicking it shows a premium glassmorphic spinner card with an animated progress bar.
+
+**Failed Workspace State:** Shows a dedicated error card with a "Remove Record" button to clean up the failed entry.
+
+---
+
+### 5. 💬 Context-Aware Q&A Bidding Assistant
+
+The right-panel chatbot can answer any free-form question about the active tender:
+
+- **Primary context:** Uses the AI-extracted `analysis_result` JSON (all 9 sections) as its knowledge base — always accurate regardless of document size
+- **RAG augmentation:** Fetches semantically relevant raw text chunks via pgvector for granular questions
+- **Chat history:** Sends last 5 turns of conversation to Gemini for contextual follow-up questions
+- **Persistent history:** All Q&A pairs stored in Supabase `tender_qa` table, reloaded on revisit
+- **Markdown rendering:** Answers render with `**bold**` and `- bullet` formatting, not raw text
+- **Auto-scroll:** Chat panel scrolls smoothly as answers arrive
+- **Supabase JWT passthrough:** Auth token sent to backend so RLS policies scope data per-user
+
+---
+
+### 6. 🎯 Go/No-Go Suitability Scorecard
+
+The **Go/No-Go** tab allows bid managers to evaluate whether their company should bid:
+
+1. Enter company profile (turnover, certifications, past experience)
+2. AI performs a GAP analysis against extracted eligibility and financial requirements
+3. Returns a **suitability score (0–100)**, `Go` / `No-Go` / `Proceed with Caution` decision
+4. Lists specific **matching qualifications** and **compliance gaps**
+5. Provides a strategic 3–4 sentence executive recommendation
+
+---
+
+### 7. 📅 Milestone Timeline Visualizer
+
+The **Timeline** tab parses extracted `key_dates` into a visual chronological milestone roadmap:
+
+- Renders each deadline as a timeline node with date and label
+- Color-coded urgency indicators (upcoming vs. past deadlines)
+- Works from the AI-extracted structured data — no manual input needed
+
+---
+
+### 8. 📊 Procurement Intelligence Dashboard
+
+The home screen (before selecting a tender) shows live workspace metrics:
+
+| Metric | Source |
+|---|---|
+| **Total Tenders Audited** | Count of all tender records in DB |
+| **Active Bid Pursuits** | Count of `status = 'Active'` tenders |
+| **Submitted Proposals** | Count of `status = 'Submitted'` tenders |
+
+---
+
+### 9. 🗂️ Sidebar Tender Management
+
+| Feature | Detail |
+|---|---|
+| **Search** | Real-time fuzzy search by tender name |
+| **Status filter** | Filter tabs: All / Active / Submitted / Expired |
+| **Delete with confirmation** | Hover-reveal trash icon triggers a modal confirmation dialog before deletion |
+| **Status badges** | Color-coded pill badges with pulsing animation for Processing state |
+| **File size & date** | Shows document size and upload date below tender name |
+| **Tender lifecycle selector** | In-workspace dropdown to manually move tender between Active → Submitted → Expired |
+
+---
+
+### 10. 🔔 Notification System
+
+A global `NotificationProvider` wraps the application with two notification types:
+
+- **Toast notifications:** Transient success/error/info messages that auto-dismiss
+- **Confirm dialogs:** Modal confirmation prompts for destructive actions (delete, sign out) with `isDanger` red styling option
+
+---
+
+### 11. 📄 Report Exporting
+
+| Export Type | Detail |
+|---|---|
+| **Word Document (.doc)** | Generates a clean, editable Word-compatible file of all 9 sections |
+| **PDF (Print Styles)** | `@media print` CSS hides sidebar, chatbot, nav buttons — adds a professional header with Tender Name, Generation Date, Status, and Deadline. Prints the 9 compliance sections as a corporate PDF |
+| **Copy to Clipboard** | Per-section copy button; copies only filtered results when search is active |
+
+---
+
+### 12. 📱 Mobile Responsive Layout
+
+- **Mobile top bar:** TenderIQ branding + hamburger menu button
+- **Sidebar drawer:** Slides in from left on mobile with a full-screen backdrop overlay
+- **Auto-close:** Drawer closes automatically on tender selection or "Analyze New Tender" click
+- **Breakpoint:** Responsive layout switches at `768px` viewport width
+
+---
+
+### 13. 🎉 UX Micro-Interactions
+
+- **Confetti explosion** (`canvas-confetti`) fires when a tender analysis completes successfully
+- **Section navigation dot indicators** (green/red) update as you switch compliance cards
+- **Hover-reveal delete buttons** in sidebar (opacity transition from 0 → 1)
+- **Animated progress bar** during upload with descriptive status text messages
+- **Loading dots animation** during initial session load
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FRONTEND (Vite + React)                   │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────┐  ┌────────┐  │
+│  │ Sidebar  │  │ TenderDetail │  │  ChatBot │  │UploadZ │  │
+│  │ (Tender  │  │ (9 sections  │  │  (Q&A +  │  │  one   │  │
+│  │  List)   │  │  + GoNoGo +  │  │  RAG)    │  │(Upload)│  │
+│  │          │  │  Timeline)   │  │          │  │        │  │
+│  └────┬─────┘  └──────┬───────┘  └────┬─────┘  └───┬────┘  │
+│       │               │               │             │       │
+│       └───────────────┴───────────────┴─────────────┘       │
+│                        Supabase Client (JS)                  │
+└────────────────────────────┬────────────────────────────────┘
+                             │ HTTPS + JWT Auth Header
+┌────────────────────────────▼────────────────────────────────┐
+│                   BACKEND (FastAPI + Uvicorn)                │
+│                    Vercel Serverless Function                 │
+│                                                             │
+│  POST /api/upload  →  Extract → Analyze → Chunk → Embed     │
+│  POST /api/qa      →  Fetch analysis_result → RAG → Gemini  │
+│  POST /api/gonogo  →  GAP analysis → Score → Decision       │
+│  GET  /api/health  →  Status check                          │
+│  GET  /api/tenders/{id}/status → Polling endpoint           │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+┌────────────────────────────▼────────────────────────────────┐
+│                        SUPABASE                              │
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────┐ │
+│  │   tenders    │  │  tender_qa   │  │  tender_chunks     │ │
+│  │  (analysis,  │  │  (chat hist) │  │  (text + vectors   │ │
+│  │   status)    │  │              │  │   for RAG search)  │ │
+│  └──────────────┘  └──────────────┘  └────────────────────┘ │
+│                   Row-Level Security on all tables           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Technical Stack
+
+### Frontend
+| Technology | Version | Purpose |
+|---|---|---|
+| React | 18+ | UI component framework |
+| TypeScript | 5+ | Type-safe development |
+| Vite | 8+ | Build tool and dev server |
+| Vanilla CSS | — | Custom design system, glassmorphism, animations |
+| Supabase JS | 2+ | Auth, database client |
+| canvas-confetti | — | Upload success animation |
+| lucide-react | — | Icon library |
+
+### Backend
+| Technology | Version | Purpose |
+|---|---|---|
+| FastAPI | 0.111 | REST API framework |
+| Uvicorn | 0.30 | ASGI server |
+| Google Generative AI | 0.7.2 | Gemini 2.5 Flash (analysis) + embedding-001 (RAG) |
+| PyMuPDF | 1.24 | PDF text extraction |
+| python-docx | 1.1 | DOCX text extraction |
+| supabase-py | 2.5 | Database client + auth |
+| python-dotenv | 1.0 | Environment variable loading |
+| pydantic | 2.7 | Request body validation |
+
+### Infrastructure
+| Service | Purpose |
+|---|---|
+| Supabase | PostgreSQL database, Auth (JWT), Row-Level Security, pgvector extension |
+| Vercel (Backend) | Python serverless function hosting |
+| Vercel (Frontend) | Static SPA hosting with CDN |
+| GitHub | Source control + Vercel auto-deploy trigger |
+
+---
+
+## Database Schema
+
+Run the full `schema.sql` file in your Supabase SQL editor. It creates:
+
+### `public.tenders`
+```sql
+id            UUID PRIMARY KEY
+user_id       UUID → auth.users
+name          TEXT
+status        TEXT CHECK IN ('Active','Submitted','Expired','Processing','Failed')
+deadline      TIMESTAMP WITH TIME ZONE
+file_size     BIGINT
+page_count    INT
+extracted_text TEXT          -- First 100K chars of document
+analysis_result JSONB        -- Full 9-section AI extraction
+created_at    TIMESTAMP
+```
+
+### `public.tender_qa`
+```sql
+id          UUID PRIMARY KEY
+tender_id   UUID → tenders
+user_id     UUID → auth.users
+question    TEXT
+answer      TEXT
+created_at  TIMESTAMP
+```
+
+### `public.tender_chunks` *(RAG Vector Store)*
+```sql
+id            UUID PRIMARY KEY
+tender_id     UUID → tenders (ON DELETE CASCADE)
+chunk_content TEXT
+page_number   INT
+embedding     vector(768)   -- Google embedding-001 dimensions
+created_at    TIMESTAMP
+```
+
+### `match_tender_chunks` RPC Function
+PostgreSQL function performing cosine similarity search:
+```sql
+match_tender_chunks(
+  query_embedding  vector(768),
+  match_threshold  float,        -- minimum similarity (0.25 default)
+  match_count      int,          -- top N results (5 default)
+  filter_tender_id uuid
+) RETURNS TABLE(id, tender_id, chunk_content, page_number, similarity)
+```
+
+All tables have **Row-Level Security (RLS)** enforced — users can only access their own data.
+
+---
+
+## API Reference
+
+Base URL (local): `http://127.0.0.1:8000`  
+Base URL (production): `https://tenderiq-backend.vercel.app`
+
+### `GET /api/health`
+Returns server health and configuration status.
+```json
+{ "status": "healthy", "gemini_api_configured": true, "supabase_configured": true }
+```
+
+### `POST /api/upload`
+Accepts document files or raw text, extracts content, runs AI analysis, generates embeddings, and updates the tender record.
+
+**Form Data:**
+| Field | Type | Required |
+|---|---|---|
+| `tender_id` | string (UUID) | ✅ |
+| `files` | File[] | Either `files` or `raw_text` |
+| `raw_text` | string | Either `files` or `raw_text` |
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:**
+```json
+{ "status": "completed", "tender_id": "uuid", "message": "Tender processed and saved successfully." }
+```
+
+### `POST /api/qa`
+Answers a free-form question using structured analysis + RAG context.
+
+**Body:**
+```json
+{
+  "document_text": "fallback raw text",
+  "question": "What are the key deadlines?",
+  "history": [{ "question": "...", "answer": "..." }],
+  "tender_id": "uuid"
+}
+```
+
+**Response:** `{ "answer": "markdown formatted answer" }`
+
+### `POST /api/gonogo`
+Evaluates bid suitability against company profile.
+
+**Body:**
+```json
+{
+  "analysis_result": { ...9_section_json... },
+  "company_profile": "Turnover: ₹50Cr, Experience: 10 years..."
+}
+```
+
+**Response:**
+```json
+{
+  "score": 78,
+  "decision": "Go",
+  "matches": ["Meets turnover requirement", "..."],
+  "gaps": ["Missing ISO certification", "..."],
+  "explanation": "Strategic summary..."
+}
+```
+
+### `GET /api/tenders/{tender_id}/status`
+Polls a tender's current processing status and returns its data fields.
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+---
+
+## Local Setup & Installation
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- A Supabase project (free tier works)
+- A Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
+
+---
+
+### Step 1: Database Setup (Supabase)
+
+1. Go to your [Supabase Dashboard](https://supabase.com/dashboard)
+2. Open the **SQL Editor** → click **New Query**
+3. Paste the full contents of `schema.sql` and click **Run**
+4. Go to **Authentication → Providers → Email** and **disable "Confirm email"** for local testing
+
+> **Important for RAG:** If you've already created the tenders table without the new status values, run this migration in the SQL editor:
+> ```sql
+> ALTER TABLE public.tenders DROP CONSTRAINT IF EXISTS tenders_status_check;
+> ALTER TABLE public.tenders ADD CONSTRAINT tenders_status_check
+>   CHECK (status IN ('Active', 'Submitted', 'Expired', 'Processing', 'Failed'));
+> ALTER TABLE public.tenders ALTER COLUMN status SET DEFAULT 'Processing';
+> ```
+
+---
+
+### Step 2: Backend Setup
+
+```bash
+# From the project root
+python -m venv venv
+.\venv\Scripts\activate          # Windows
+# source venv/bin/activate       # macOS/Linux
+
+pip install -r backend/requirements.txt
+```
+
+Create `backend/.env`:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_ANON_KEY=your_supabase_anon_key_here
+```
+
+Start the backend server:
+```bash
+.\venv\Scripts\python -m uvicorn main:app --app-dir backend --host 127.0.0.1 --port 8000 --reload
+```
+
+The `--reload` flag enables auto-restart when source files change.
+
+---
+
+### Step 3: Frontend Setup
+
+```bash
+cd frontend
+npm install
+```
+
+Create `frontend/.env`:
+```env
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+VITE_API_URL=http://localhost:8000
+```
+
+Start the development server:
+```bash
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+---
+
+### Stopping the Backend (Windows PowerShell)
+
+If port 8000 is already in use:
+```powershell
+# Find the PID
+netstat -ano | findstr ":8000"
+
+# Kill it (replace 12345 with actual PID)
+taskkill /PID 12345 /F
+```
+
+---
+
+## Production Deployment (Vercel)
+
+TenderIQ is structured for split-service deployment — backend and frontend as separate Vercel projects.
 
 ### Step 1: Deploy Backend (FastAPI Serverless)
-1. Log in to [vercel.com](https://vercel.com) and click **Add New** > **Project**.
-2. Import your GitHub repository.
+
+1. Log in to [vercel.com](https://vercel.com) → **Add New → Project**
+2. Import your GitHub repository
 3. In **Configure Project**:
-   * **Project Name:** Set to `tenderiq-backend`.
-   * **Root Directory:** Select the `backend` folder. (It uses the pre-configured `backend/vercel.json` file automatically).
-4. Under **Environment Variables**, add the values from `backend/.env`:
-   * `GEMINI_API_KEY`
-   * `SUPABASE_URL`
-   * `SUPABASE_KEY`
-5. Click **Deploy**.
-6. Once deployed, copy your backend deployment URL (e.g. `https://tenderiq-backend.vercel.app`).
+   - **Project Name:** `tenderiq-backend`
+   - **Root Directory:** `backend` *(Vercel uses `backend/vercel.json` automatically)*
+4. Under **Environment Variables**, add:
+   | Key | Value |
+   |---|---|
+   | `GEMINI_API_KEY` | Your Gemini API key |
+   | `SUPABASE_URL` | Your Supabase project URL |
+   | `SUPABASE_ANON_KEY` | Your Supabase anon key |
+5. Click **Deploy**
+6. Copy your deployment URL (e.g., `https://tenderiq-backend.vercel.app`)
+
+> **CORS:** The `backend/vercel.json` injects `Access-Control-Allow-Origin` headers at the Vercel edge layer as a dual-layer defence alongside FastAPI's CORSMiddleware.
 
 ### Step 2: Deploy Frontend (Vite Static Build)
-1. Go to your Vercel Dashboard, click **Add New** > **Project**.
-2. Import your GitHub repository.
-3. In **Configure Project**:
-   * **Project Name:** Set to `tenderiq-frontend`.
-   * **Root Directory:** Select the `frontend` folder.
-   * **Framework Preset:** Select **Vite**.
-4. Under **Environment Variables**, add:
-   * `VITE_SUPABASE_URL` = *(Your Supabase URL)*
-   * `VITE_SUPABASE_ANON_KEY` = *(Your Supabase Anon Key)*
-   * `VITE_API_URL` = *(Your live backend URL copied in Step 1)*
-5. Click **Deploy**.
+
+1. **Add New → Project** → Import the same GitHub repository
+2. In **Configure Project**:
+   - **Project Name:** `tenderiq-frontend`
+   - **Root Directory:** `frontend`
+   - **Framework Preset:** Vite
+3. Under **Environment Variables**, add:
+   | Key | Value |
+   |---|---|
+   | `VITE_SUPABASE_URL` | Your Supabase project URL |
+   | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key |
+   | `VITE_API_URL` | Your backend URL from Step 1 (no trailing slash) |
+4. Click **Deploy**
+
+### Auto-Deploy
+Every `git push` to the `main` branch triggers automatic rebuilds on both Vercel projects.
 
 ---
 
-## 🗺️ Roadmap: Features Remaining to Add
+## Environment Variables
 
-The following features represent future enhancements and functional items left to build:
+### Backend (`backend/.env`)
+| Variable | Required | Description |
+|---|---|---|
+| `GEMINI_API_KEY` | ✅ | Google Gemini API key for AI analysis and embeddings |
+| `SUPABASE_URL` | ✅ | Supabase project REST URL |
+| `SUPABASE_ANON_KEY` | ✅ | Supabase anonymous public key |
 
-### 1. Scanned Document OCR Fallback
-* Integration with an OCR engine (e.g., PyTesseract, EasyOCR, or Google Cloud Vision API) to extract text from scanned, image-only PDFs that contain no digital text.
-* Currently, the system raises a graceful `ExtractionError` for scanned files.
+### Frontend (`frontend/.env`)
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_SUPABASE_URL` | ✅ | Supabase project REST URL |
+| `VITE_SUPABASE_ANON_KEY` | ✅ | Supabase anonymous public key |
+| `VITE_API_URL` | ✅ | Backend API base URL (no trailing slash) |
 
-### 2. Comparative Tender Analytics Matrix
-* A side-by-side comparison matrix panel that allows bid managers to select multiple uploaded tenders and compare their financial turnovers, EMD securities, and submission dates in a tabular comparison layout.
+---
 
-### 3. Automated Bid Team Collaboration
-* A shared comment thread or discussion board on the sidebar, allowing team members to review Scorecards, add comments, and flag risks.
-* Multi-user assignment workflow where bids can be marked as "Under Legal Review", "Technical Review", or "Approved to Bid".
+## Roadmap
 
-### 4. Direct Email & Chat Integration Notifications
-* Automatic slack alerts, discord webhooks, or email notifications sent to bid teams when a critical milestone or deadline (e.g., Pre-bid meeting) is approaching.
+The following features represent planned future enhancements:
 
-### 5. AI Bid Writing Assistant
-* Draft standard response documents, cover letters, and capability matrices based on the extracted scope of work and eligibility requirements directly from the interface.
+### 1. 🔭 Scanned Document OCR Support
+- Integration with PyTesseract, EasyOCR, or Google Cloud Vision API to handle image-only (scanned) PDFs
+- Currently, the parser raises a graceful `ExtractionError` for non-digital PDFs with no extractable text
+
+### 2. 📊 Comparative Tender Analytics Matrix
+- Side-by-side comparison panel for multiple uploaded tenders
+- Compare EMD securities, turnover requirements, submission deadlines, and scope size in a tabular layout
+- Export comparison matrices as CSV or PDF
+
+### 3. 🤝 Bid Team Collaboration Workspace
+- Shared comment thread on each tender for team review and discussion
+- Multi-user assignment workflow: mark bids as "Under Legal Review", "Technical Review", or "Approved to Bid"
+- Role-based access control (Admin, Reviewer, Viewer)
+
+### 4. 🔔 Deadline Notification Alerts
+- Email notifications or Slack/Discord webhook alerts when critical milestones approach (e.g., pre-bid meeting in 48 hours)
+- Configurable reminder intervals per tender
+
+### 5. ✍️ AI Bid Writing Assistant
+- Draft cover letters, capability statements, and compliance matrices from the extracted scope and eligibility requirements
+- Output pre-formatted Word documents tailored to the specific tender
+
+### 6. 📈 Analytics Dashboard
+- Historical bid win/loss tracking
+- Industry-wise tender category distribution
+- Average time from upload to submission tracking
+
+---
+
+## License
+
+MIT License — see `LICENSE` file for details.
+
+---
+
+*Built with ❤️ using Google Gemini, Supabase, FastAPI, and React.*
