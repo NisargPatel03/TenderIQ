@@ -13,7 +13,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   onUploadError,
 }) => {
   const [dragActive, setDragActive] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [rawText, setRawText] = useState('');
   const [showTextPaste, setShowTextPaste] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -38,33 +38,47 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      validateAndSetFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      validateAndSetFiles(Array.from(e.dataTransfer.files));
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      validateAndSetFile(e.target.files[0]);
+    if (e.target.files && e.target.files.length > 0) {
+      validateAndSetFiles(Array.from(e.target.files));
     }
   };
 
-  const validateAndSetFile = (selectedFile: File) => {
+  const validateAndSetFiles = (selectedFiles: File[]) => {
     setLocalError(null);
     const validExtensions = ['pdf', 'docx', 'txt'];
-    const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
-    
-    if (!fileExtension || !validExtensions.includes(fileExtension)) {
-      setLocalError("Unsupported file type. Please upload a PDF, DOCX, or TXT file.");
-      return;
+    const validFiles: File[] = [];
+    let hasInvalid = false;
+
+    selectedFiles.forEach((selectedFile) => {
+      const fileExtension = selectedFile.name.split('.').pop()?.toLowerCase();
+      if (fileExtension && validExtensions.includes(fileExtension)) {
+        if (!files.some(f => f.name === selectedFile.name)) {
+          validFiles.push(selectedFile);
+        }
+      } else {
+        hasInvalid = true;
+      }
+    });
+
+    if (hasInvalid) {
+      setLocalError("Some files were skipped. Only PDF, DOCX, or TXT formats are allowed.");
     }
-    setFile(selectedFile);
-    setRawText(''); // Reset pasted text if file is chosen
+
+    if (validFiles.length > 0) {
+      setFiles((prev) => [...prev, ...validFiles]);
+      setRawText(''); // Reset pasted text if files are chosen
+    }
   };
 
   const triggerUpload = async () => {
-    if (!file && !rawText.trim()) {
-      setLocalError("Please select a file or paste raw text first.");
+    if (files.length === 0 && !rawText.trim()) {
+      setLocalError("Please select at least one file or paste raw text first.");
       return;
     }
 
@@ -75,15 +89,16 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     setStatusText("Reading document content...");
 
     const formData = new FormData();
-    if (file) {
-      formData.append("file", file);
+    if (files.length > 0) {
+      files.forEach((f) => {
+        formData.append("files", f);
+      });
     } else {
       formData.append("raw_text", rawText.trim());
       formData.append("filename", "Pasted_Tender_Text.txt");
     }
 
     try {
-      // Simulate reading file progress
       const progressInterval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 90) {
@@ -126,7 +141,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   };
 
   const resetState = () => {
-    setFile(null);
+    setFiles([]);
     setRawText('');
     setProgress(0);
     setStatusText('');
@@ -144,9 +159,9 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   return (
     <div className="upload-card">
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        <h2 style={{ fontSize: '20px' }}>Upload Tender Document</h2>
+        <h2 style={{ fontSize: '20px' }}>Upload Bidding Documents</h2>
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          Select or drop a tender RFP document. TenderIQ supports files up to 500 pages.
+          Select or drag-and-drop multiple tender RFP files to analyze them as a unified bidding package.
         </p>
       </div>
 
@@ -183,40 +198,69 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
               style={{ display: 'none' }}
               onChange={handleFileChange}
               accept=".pdf,.docx,.txt"
+              multiple
             />
             <UploadCloud size={48} className="upload-icon" />
             <p style={{ fontWeight: 600, fontSize: '14px' }}>
-              Drag and drop your file here, or <span style={{ color: 'var(--primary)' }}>browse</span>
+              Drag and drop files here, or <span style={{ color: 'var(--primary)' }}>browse</span>
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
-              Supports PDF, DOCX, TXT
+              Supports multiple PDF, DOCX, TXT files
             </p>
           </div>
 
-          {file && (
-            <div style={{
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'space-between', 
-              background: 'var(--bg-secondary)', 
-              padding: '12px 16px', 
-              borderRadius: '8px',
-              border: '1px solid var(--border-color)'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FileText size={20} style={{ color: 'var(--secondary)' }} />
-                <div>
-                  <p style={{ fontSize: '13px', fontWeight: 600 }}>{file.name}</p>
-                  <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{getFriendlySize(file.size)}</p>
-                </div>
+          {files.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Selected Files ({files.length})
+                </span>
+                <button 
+                  style={{ fontSize: '11px', color: 'var(--accent-red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                  onClick={() => setFiles([])}
+                >
+                  Clear All
+                </button>
               </div>
-              <button 
-                className="btn btn-danger" 
-                style={{ padding: '4px 8px', fontSize: '11px' }}
-                onClick={() => setFile(null)}
-              >
-                Clear
-              </button>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto', paddingRight: '4px' }}>
+                {files.map((f, idx) => (
+                  <div key={`${f.name}-${idx}`} style={{
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between', 
+                    background: 'var(--bg-secondary)', 
+                    padding: '8px 12px', 
+                    borderRadius: '6px',
+                    border: '1px solid var(--border-light)'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
+                      <FileText size={16} style={{ color: 'var(--secondary)', flexShrink: 0 }} />
+                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <p style={{ fontSize: '12px', fontWeight: 600, margin: 0 }}>{f.name}</p>
+                        <p style={{ fontSize: '10px', color: 'var(--text-muted)', margin: 0 }}>{getFriendlySize(f.size)}</p>
+                      </div>
+                    </div>
+                    <button 
+                      style={{ 
+                        padding: '2px 6px', 
+                        fontSize: '10px', 
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)', 
+                        color: '#ef4444', 
+                        border: 'none', 
+                        borderRadius: '4px',
+                        cursor: 'pointer' 
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFiles((prev) => prev.filter((_, i) => i !== idx));
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -224,7 +268,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
             <button
               onClick={() => {
                 setShowTextPaste(!showTextPaste);
-                setFile(null);
+                setFiles([]);
               }}
               style={{
                 background: 'transparent',
@@ -257,7 +301,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
             className="btn btn-primary"
             onClick={triggerUpload}
             style={{ width: '100%', padding: '12px', fontSize: '14px', height: '48px', justifyContent: 'center' }}
-            disabled={!file && !rawText.trim()}
+            disabled={files.length === 0 && !rawText.trim()}
           >
             Start AI Auto-Extraction
           </button>

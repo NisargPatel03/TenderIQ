@@ -52,13 +52,14 @@ def health_check():
 
 @app.post("/api/upload")
 async def upload_document(
+    files: List[UploadFile] = File(default=[]),
     file: Optional[UploadFile] = File(None),
     raw_text: Optional[str] = Form(None),
     filename: Optional[str] = Form(None)
 ):
     """
-    Accepts a document file or raw text. Extracts text and triggers Gemini 
-    AI analysis to parse eligibility, deadlines, scope, etc.
+    Accepts single/multiple document files or raw text. Extracts text, merges
+    if multiple, and triggers Gemini AI analysis to parse key sections.
     """
     if not gemini_client:
         raise HTTPException(
@@ -67,21 +68,45 @@ async def upload_document(
         )
 
     extracted_text = ""
-    page_count = 1
+    page_count = 0
     file_size = 0
     resolved_filename = filename or "pasted_text.txt"
 
     # 1. Text Extraction
     try:
+        all_files = []
+        if files:
+            all_files.extend(files)
         if file:
-            file_bytes = await file.read()
-            file_size = len(file_bytes)
-            resolved_filename = file.filename
-            extracted_text, page_count = extract_content(file_bytes, resolved_filename)
+            all_files.append(file)
+
+        if all_files:
+            extracted_parts = []
+            total_pages = 0
+            total_size = 0
+            
+            for f in all_files:
+                file_bytes = await f.read()
+                total_size += len(file_bytes)
+                f_text, f_pages = extract_content(file_bytes, f.filename)
+                
+                part_header = f"\n=========================================\n" \
+                              f"DOCUMENT: {f.filename}\n" \
+                              f"=========================================\n\n"
+                extracted_parts.append(part_header + f_text)
+                total_pages += f_pages
+
+            extracted_text = "\n".join(extracted_parts)
+            page_count = total_pages
+            file_size = total_size
+            
+            if len(all_files) == 1:
+                resolved_filename = all_files[0].filename
+            else:
+                resolved_filename = f"Bidding Package ({len(all_files)} files)"
         elif raw_text:
             extracted_text = raw_text.strip()
             file_size = len(extracted_text.encode("utf-8"))
-            # Estimate pages (approx 3000 chars per page)
             page_count = max(1, (len(extracted_text) // 3000) + 1)
         else:
             raise HTTPException(status_code=400, detail="Either a file upload or raw_text is required.")
