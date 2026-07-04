@@ -191,7 +191,7 @@ function App() {
       />
 
       {/* Main Workspace Frame */}
-      <main className="main-workspace">
+      <main className={`main-workspace ${activeTender ? 'workspace-active' : ''}`}>
         {showUploadForm ? (
           /* Upload Dashboard screen */
           <>

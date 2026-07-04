@@ -377,6 +377,10 @@ button, input, textarea, select {
   overflow-y: auto;
 }
 
+.main-workspace.workspace-active {
+  overflow: hidden;
+}
+
 .header {
   height: 70px;
   border-bottom: 1px solid var(--border-color);
