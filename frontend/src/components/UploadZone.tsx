@@ -216,17 +216,18 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         formData.append("filename", resolvedFilename);
       }
 
+      // 4. Animate progress while waiting for synchronous backend response
       const progressInterval = setInterval(() => {
         setProgress((prev) => {
-          if (prev >= 90) {
+          if (prev >= 88) {
             clearInterval(progressInterval);
-            return 90;
+            return 88;
           }
-          return prev + 10;
+          return prev + 6;
         });
-      }, 500);
+      }, 1200);
 
-      setStatusText("Triggering background AI processing...");
+      setStatusText("AI is extracting compliance data from your documents...");
       const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
       const response = await fetch(`${baseUrl}/api/upload`, {
         method: "POST",
@@ -239,17 +240,29 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
       clearInterval(progressInterval);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        // If backend fails, mark tender as failed in DB
-        await supabase.from('tenders').update({ status: 'Failed' }).eq('id', newTender.id);
-        throw new Error(errorData.detail || "Failed to process document.");
+        let errMsg = "Failed to process document.";
+        try { errMsg = (await response.json()).detail || errMsg; } catch {}
+        // Backend already marked as Failed — just propagate the error
+        throw new Error(errMsg);
       }
 
+      setProgress(95);
+      setStatusText("Fetching completed analysis...");
+
+      // 5. Fetch the fully-updated tender row (has analysis_result, status=Active, etc.)
+      const { data: completedTender, error: fetchErr } = await supabase
+        .from('tenders')
+        .select('*')
+        .eq('id', newTender.id)
+        .single();
+
+      if (fetchErr) throw fetchErr;
+
       setProgress(100);
-      setStatusText("Tender queued successfully!");
+      setStatusText("Analysis complete!");
       
       setTimeout(() => {
-        onUploadSuccess(newTender);
+        onUploadSuccess(completedTender);
         resetState();
       }, 500);
 

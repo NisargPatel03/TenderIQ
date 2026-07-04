@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -16,110 +16,56 @@ from gemini import GeminiClient
 
 app = FastAPI(title="TenderIQ API", version="1.0.0")
 
-# Enable CORS for frontend integration
+# ─── CORS ────────────────────────────────────────────────────────────────────
+# Allow ALL origins so Vercel edge + local dev both work.
+# The vercel.json edge-level headers act as a second layer of defence.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the frontend URL
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,          # must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize Gemini Client
+# ─── Gemini Client ────────────────────────────────────────────────────────────
 try:
     gemini_client = GeminiClient()
 except Exception as e:
     print(f"WARNING: Gemini client could not be initialized: {e}")
     gemini_client = None
 
-# Supabase Client helper supporting both User Auth JWT header & server key fallback
-def get_supabase_client(auth_header: Optional[str] = None) -> Client:
+
+# ─── Supabase helper ──────────────────────────────────────────────────────────
+def get_supabase(auth_header: Optional[str] = None) -> Client:
     url = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY") or os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("VITE_SUPABASE_ANON_KEY")
+    key = (
+        os.environ.get("SUPABASE_KEY")
+        or os.environ.get("SUPABASE_ANON_KEY")
+        or os.environ.get("VITE_SUPABASE_ANON_KEY")
+    )
     if not url or not key:
-        raise ValueError("Supabase credentials (SUPABASE_URL & SUPABASE_KEY/ANON_KEY) are not set in the environment.")
-    
+        raise ValueError("Supabase credentials are not set in environment variables.")
     client = create_client(url, key)
     if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
+        token = auth_header.split(" ", 1)[1]
         client.postgrest.auth(token)
     return client
 
-# Background Processing for Chunking, Embeddings, and AI Analysis
-async def process_tender_background(
-    tender_id: str,
-    extracted_text: str,
-    page_count: int,
-    file_size: int,
-    auth_header: Optional[str]
-):
-    try:
-        supabase = get_supabase_client(auth_header)
-        
-        # 1. Chunk document text
-        chunks = []
-        if gemini_client and extracted_text:
-            chunks = gemini_client.chunk_text(extracted_text)
-            
-        # 2. Generate embeddings in batches of 50
-        if chunks and gemini_client:
-            batch_size = 50
-            embeddings = []
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i:i+batch_size]
-                batch_embeddings = gemini_client.generate_embeddings(batch)
-                embeddings.extend(batch_embeddings)
-                
-            # 3. Store chunks and embeddings into database
-            chunk_payload = []
-            for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-                chunk_payload.append({
-                    "tender_id": tender_id,
-                    "chunk_content": chunk,
-                    "page_number": idx + 1,
-                    "embedding": emb
-                })
-            
-            if chunk_payload:
-                # Insert chunks
-                supabase.table("tender_chunks").insert(chunk_payload).execute()
-                
-        # 4. Perform the full compliance AI analysis
-        if gemini_client:
-            analysis = gemini_client.extract_tender_details(extracted_text)
-            deadline = analysis.get("deadline")
-            
-            # 5. Update the tender record status to Active
-            supabase.table("tenders").update({
-                "status": "Active",
-                "page_count": page_count,
-                "file_size": file_size,
-                "extracted_text": extracted_text[:100000],  # Keep snippet to save DB space
-                "analysis_result": analysis,
-                "deadline": deadline
-            }).eq("id", tender_id).execute()
-            
-    except Exception as e:
-        print(f"Error in background task for tender {tender_id}: {e}")
-        try:
-            supabase = get_supabase_client(auth_header)
-            supabase.table("tenders").update({
-                "status": "Failed"
-            }).eq("id", tender_id).execute()
-        except Exception as db_err:
-            print(f"Could not update status to Failed: {db_err}")
 
-# Pydantic schemas for request validation
+# ─── Pydantic schemas ─────────────────────────────────────────────────────────
 class QARequest(BaseModel):
     document_text: str
     question: str
     history: List[dict] = []
     tender_id: Optional[str] = None
 
+
 class GoNoGoRequest(BaseModel):
     analysis_result: dict
     company_profile: str
 
+
+# ─── Routes ───────────────────────────────────────────────────────────────────
 @app.get("/")
 def read_root():
     return {
@@ -130,181 +76,246 @@ def read_root():
             "health": "/api/health",
             "upload": "/api/upload",
             "qa": "/api/qa",
-            "gonogo": "/api/gonogo"
-        }
+            "gonogo": "/api/gonogo",
+        },
     }
+
 
 @app.get("/api/health")
 def health_check():
-    """Simple check to verify the API is running and the Gemini API Key is loaded."""
-    api_key_loaded = os.environ.get("GEMINI_API_KEY") is not None
     return {
         "status": "healthy",
-        "gemini_api_configured": api_key_loaded
+        "gemini_api_configured": os.environ.get("GEMINI_API_KEY") is not None,
+        "supabase_configured": os.environ.get("SUPABASE_URL") is not None,
     }
 
+
 @app.get("/api/tenders/{tender_id}/status")
-def get_tender_status(tender_id: str, authorization: Optional[str] = Header(None)):
-    """Fetches the real-time status of a queued tender ingestion task."""
+def get_tender_status(
+    tender_id: str, authorization: Optional[str] = Header(None)
+):
+    """Poll the processing status of a tender."""
     try:
-        supabase = get_supabase_client(authorization)
-        res = supabase.table("tenders").select("status", "analysis_result", "extracted_text", "page_count", "file_size").eq("id", tender_id).single().execute()
+        supabase = get_supabase(authorization)
+        res = (
+            supabase.table("tenders")
+            .select("id,status,analysis_result,extracted_text,page_count,file_size")
+            .eq("id", tender_id)
+            .single()
+            .execute()
+        )
         return res.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/upload")
 async def upload_document(
-    background_tasks: BackgroundTasks,
     tender_id: str = Form(...),
     files: List[UploadFile] = File(default=[]),
     file: Optional[UploadFile] = File(None),
     raw_text: Optional[str] = Form(None),
     filename: Optional[str] = Form(None),
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
 ):
     """
-    Accepts document uploads/pasted text and schedules RAG chunking,
-    embedding generation, and AI compliance analysis to run in the background.
+    Synchronous upload handler compatible with Vercel serverless.
+    The frontend pre-creates the tender row (status='Processing').
+    This endpoint extracts text, runs AI analysis, embeds chunks,
+    then updates the row to status='Active'.
     """
     if not gemini_client:
         raise HTTPException(
-            status_code=500, 
-            detail="Gemini API Client is not configured. Please check the backend .env file."
+            status_code=500,
+            detail="Gemini API Client is not configured. Check backend environment variables.",
         )
 
+    # ── 1. Text extraction ────────────────────────────────────────────────────
     extracted_text = ""
     page_count = 0
     file_size = 0
 
-    # 1. Text Extraction
     try:
-        all_files = []
-        if files:
-            all_files.extend(files)
+        all_files = list(files or [])
         if file:
             all_files.append(file)
 
         if all_files:
-            extracted_parts = []
-            total_pages = 0
-            total_size = 0
-            
+            parts, total_pages, total_size = [], 0, 0
             for f in all_files:
-                file_bytes = await f.read()
-                total_size += len(file_bytes)
-                f_text, f_pages = extract_content(file_bytes, f.filename)
-                
-                part_header = f"\n=========================================\n" \
-                              f"DOCUMENT: {f.filename}\n" \
-                              f"=========================================\n\n"
-                extracted_parts.append(part_header + f_text)
+                data = await f.read()
+                total_size += len(data)
+                f_text, f_pages = extract_content(data, f.filename)
+                parts.append(
+                    f"\n=========================================\n"
+                    f"DOCUMENT: {f.filename}\n"
+                    f"=========================================\n\n{f_text}"
+                )
                 total_pages += f_pages
-
-            extracted_text = "\n".join(extracted_parts)
+            extracted_text = "\n".join(parts)
             page_count = total_pages
             file_size = total_size
+
         elif raw_text:
             extracted_text = raw_text.strip()
             file_size = len(extracted_text.encode("utf-8"))
-            page_count = max(1, (len(extracted_text) // 3000) + 1)
+            page_count = max(1, len(extracted_text) // 3000 + 1)
+
         else:
-            raise HTTPException(status_code=400, detail="Either a file upload or raw_text is required.")
+            raise HTTPException(
+                status_code=400,
+                detail="Either file uploads or raw_text is required.",
+            )
 
     except ExtractionError as ee:
+        # Mark as Failed in DB then propagate
+        _mark_failed(tender_id, authorization)
         raise HTTPException(status_code=400, detail=str(ee))
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Text extraction failed: {str(e)}")
+        _mark_failed(tender_id, authorization)
+        raise HTTPException(status_code=500, detail=f"Text extraction failed: {e}")
 
-    # 2. Trigger asynchronous background process
-    background_tasks.add_task(
-        process_tender_background,
-        tender_id=tender_id,
-        extracted_text=extracted_text,
-        page_count=page_count,
-        file_size=file_size,
-        auth_header=authorization
-    )
+    # ── 2. AI compliance analysis ─────────────────────────────────────────────
+    try:
+        analysis = gemini_client.extract_tender_details(extracted_text)
+        deadline = analysis.get("deadline")
+    except Exception as e:
+        _mark_failed(tender_id, authorization)
+        raise HTTPException(status_code=500, detail=f"AI analysis failed: {e}")
+
+    # ── 3. Update tender record to Active ─────────────────────────────────────
+    try:
+        supabase = get_supabase(authorization)
+        supabase.table("tenders").update(
+            {
+                "status": "Active",
+                "page_count": page_count,
+                "file_size": file_size,
+                # Store a 100 000-char snippet to keep DB lean
+                "extracted_text": extracted_text[:100_000],
+                "analysis_result": analysis,
+                "deadline": deadline,
+            }
+        ).eq("id", tender_id).execute()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database update failed: {e}")
+
+    # ── 4. Best-effort RAG chunking & embeddings (non-blocking on failure) ────
+    try:
+        chunks = gemini_client.chunk_text(extracted_text)
+        if chunks:
+            batch_size = 50
+            embeddings = []
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i : i + batch_size]
+                embeddings.extend(gemini_client.generate_embeddings(batch))
+
+            payload = [
+                {
+                    "tender_id": tender_id,
+                    "chunk_content": chunk,
+                    "page_number": idx + 1,
+                    "embedding": emb,
+                }
+                for idx, (chunk, emb) in enumerate(zip(chunks, embeddings))
+            ]
+            if payload:
+                supabase.table("tender_chunks").insert(payload).execute()
+    except Exception as e:
+        # Chunking failure is non-fatal — the tender is already Active
+        print(f"RAG chunking skipped for tender {tender_id}: {e}")
 
     return {
-        "status": "accepted",
+        "status": "completed",
         "tender_id": tender_id,
-        "message": "Tender processing started in the background."
+        "message": "Tender processed and saved successfully.",
     }
 
+
+def _mark_failed(tender_id: str, auth_header: Optional[str]):
+    """Helper to update a tender row to Failed status on error."""
+    try:
+        supabase = get_supabase(auth_header)
+        supabase.table("tenders").update({"status": "Failed"}).eq(
+            "id", tender_id
+        ).execute()
+    except Exception as db_err:
+        print(f"Could not mark tender {tender_id} as Failed: {db_err}")
+
+
 @app.post("/api/qa")
-def ask_question(request: QARequest, authorization: Optional[str] = Header(None)):
+def ask_question(
+    request: QARequest, authorization: Optional[str] = Header(None)
+):
     """
-    Answers a free-form user query using similarity search (RAG) context
-    if tender_id is provided, falling back to full document text if needed.
+    Answers a free-form user query.
+    Uses pgvector RAG similarity search if tender_id is supplied,
+    otherwise falls back to the full document_text.
     """
     if not gemini_client:
         raise HTTPException(
-            status_code=500, 
-            detail="Gemini API Client is not configured. Please check the backend .env file."
+            status_code=500,
+            detail="Gemini API Client is not configured.",
         )
-    
+
     context = ""
-    # If tender_id is provided, retrieve matching semantic chunks (RAG)
+
     if request.tender_id:
         try:
-            supabase = get_supabase_client(authorization)
-            
-            # Generate query embedding
+            supabase = get_supabase(authorization)
             query_embeddings = gemini_client.generate_embeddings([request.question])
             if query_embeddings:
-                query_vector = query_embeddings[0]
-                
-                # Query similarity matches using match_tender_chunks RPC function
-                rpc_response = supabase.rpc(
+                rpc_res = supabase.rpc(
                     "match_tender_chunks",
                     {
-                        "query_embedding": query_vector,
+                        "query_embedding": query_embeddings[0],
                         "match_threshold": 0.2,
                         "match_count": 5,
-                        "filter_tender_id": request.tender_id
-                    }
+                        "filter_tender_id": request.tender_id,
+                    },
                 ).execute()
-                
-                if rpc_response.data:
-                    context = "\n\n".join([row["chunk_content"] for row in rpc_response.data])
+                if rpc_res.data:
+                    context = "\n\n".join(
+                        row["chunk_content"] for row in rpc_res.data
+                    )
         except Exception as err:
             print(f"RAG search failed, falling back to document_text: {err}")
-            
-    # Fallback to full document text if RAG yielded no context
+
     if not context:
-        context = request.document_text[:1000000]
-        
+        context = request.document_text[:100_000]
+
     try:
         answer = gemini_client.ask_tender_question(
             document_text=context,
             question=request.question,
-            history=request.history
+            history=request.history,
         )
         return {"answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/gonogo")
 def evaluate_bidding_suitability(request: GoNoGoRequest):
     """
-    Analyzes a company's suitability score (0-100), matching criteria, and gaps 
-    by comparing company profile details against the extracted tender parameters.
+    Analyses a company's suitability (0-100 score) against the tender.
     """
     if not gemini_client:
         raise HTTPException(
-            status_code=500, 
-            detail="Gemini API Client is not configured. Please check the backend .env file."
+            status_code=500,
+            detail="Gemini API Client is not configured.",
         )
-    
     try:
         evaluation = gemini_client.evaluate_go_nogo(
             analysis_result=request.analysis_result,
-            company_profile=request.company_profile
+            company_profile=request.company_profile,
         )
         return evaluation
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
