@@ -41,6 +41,20 @@ class GoNoGoRequest(BaseModel):
     analysis_result: dict
     company_profile: str
 
+@app.get("/")
+def read_root():
+    return {
+        "name": "TenderIQ API",
+        "version": "1.0.0",
+        "description": "FastAPI backend for AI-powered Tender Analysis & Intelligence",
+        "endpoints": {
+            "health": "/api/health",
+            "upload": "/api/upload",
+            "qa": "/api/qa",
+            "gonogo": "/api/gonogo"
+        }
+    }
+
 @app.get("/api/health")
 def health_check():
     """Simple check to verify the API is running and the Gemini API Key is loaded."""
