@@ -1505,11 +1505,126 @@ button, input, textarea, select {
 }
 
 @media print {
-  .printable-only-container {
+  /* Hide all non-printable layout items */
+  .sidebar,
+  .chat-panel,
+  .mobile-topbar,
+  .non-printable,
+  .header-actions,
+  .view-tabs,
+  .btn,
+  .quick-question-btn,
+  .dashboard-grid,
+  .stats-row,
+  .stat-card,
+  button,
+  .logout-btn {
+    display: none !important;
+  }
+
+  /* Reset layout constraints to allow multi-page printing */
+  html, body, #root, .app-container, .main-workspace, .tender-workspace, .analysis-panel {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
     display: block !important;
   }
-  .analysis-split-container {
-    display: none !important;
+
+  /* Show print container */
+  .printable-only-container {
+    display: block !important;
+    width: 100% !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Style report header */
+  .print-report-header {
+    margin-bottom: 30px;
+    border-bottom: 2px solid #10b981 !important;
+    padding-bottom: 16px;
+    color: black !important;
+  }
+  
+  .print-report-header h1 {
+    font-size: 26px !important;
+    color: #111827 !important;
+    margin-bottom: 6px !important;
+    font-weight: 800 !important;
+  }
+  
+  .print-report-header h2 {
+    font-size: 18px !important;
+    color: #0f766e !important;
+    margin-bottom: 16px !important;
+    border: none !important;
+    font-weight: 700 !important;
+  }
+  
+  .print-report-meta {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    font-size: 13px !important;
+    color: #374151 !important;
+  }
+
+  /* Format sections as clean document pages instead of obsidian cards */
+  .printable-only-container .analysis-card {
+    page-break-inside: avoid;
+    background: white !important;
+    border: none !important;
+    border-bottom: 1px solid #e5e7eb !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    margin-bottom: 20px !important;
+    padding: 16px 0 !important;
+    color: black !important;
+  }
+
+  .printable-only-container .card-header {
+    border-bottom: none !important;
+    padding: 0 0 8px 0 !important;
+    background: transparent !important;
+  }
+
+  .printable-only-container .card-title {
+    font-size: 18px !important;
+    color: #0f766e !important;
+    font-weight: 700 !important;
+  }
+
+  .printable-only-container .card-icon {
+    color: #10b981 !important;
+    margin-right: 8px !important;
+  }
+
+  .printable-only-container .card-body {
+    padding: 0 !important;
+    color: #374151 !important;
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+  }
+
+  .printable-only-container ul {
+    padding-left: 20px !important;
+    margin-top: 6px !important;
+    list-style-type: disc !important;
+  }
+
+  .printable-only-container li {
+    margin-bottom: 6px !important;
+    color: #374151 !important;
+  }
+
+  .printable-only-container .not-found {
+    opacity: 0.5 !important;
+    background: #f9fafb !important;
+    border-bottom: 1px dashed #d1d5db !important;
   }
 }
 
