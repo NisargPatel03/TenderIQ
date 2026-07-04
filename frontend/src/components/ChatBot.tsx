@@ -134,16 +134,19 @@ export const ChatBot: React.FC<ChatBotProps> = ({
     }));
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
       const response = await fetch(`${baseUrl}/api/qa`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {})
         },
         body: JSON.stringify({
           document_text: documentText,
           question: userQuestion,
-          history: historyContext
+          history: historyContext,
+          tender_id: tenderId
         }),
       });
 

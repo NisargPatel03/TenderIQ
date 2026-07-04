@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, FileText, Clipboard, AlertTriangle } from 'lucide-react';
+import { supabase } from '../utils/supabase';
 
 interface UploadZoneProps {
   onUploadStart: () => void;
@@ -169,34 +170,69 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
     setLocalError(null);
     setIsProcessing(true);
     onUploadStart();
-    setProgress(15);
-    setStatusText("Reading document content...");
-
-    const formData = new FormData();
-    if (files.length > 0) {
-      files.forEach((f) => {
-        formData.append("files", f);
-      });
-    } else {
-      formData.append("raw_text", rawText.trim());
-      formData.append("filename", "Pasted_Tender_Text.txt");
-    }
+    setProgress(10);
+    setStatusText("Preparing document package...");
 
     try {
+      // 1. Authenticate with Supabase to get user details & session JWT
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session || !session.user) {
+        throw new Error("You must be logged in to upload documents.");
+      }
+
+      const resolvedFilename = files.length > 0 
+        ? (files.length === 1 ? files[0].name : `Bidding Package (${files.length} files)`)
+        : "Pasted_Tender_Text.txt";
+
+      const totalSize = files.length > 0 
+        ? files.reduce((acc, f) => acc + f.size, 0)
+        : rawText.trim().length;
+
+      // 2. Pre-create tender record in Supabase with 'Processing' status
+      setStatusText("Creating database entries...");
+      const { data: newTender, error: dbError } = await supabase
+        .from('tenders')
+        .insert({
+          user_id: session.user.id,
+          name: resolvedFilename,
+          file_size: totalSize,
+          status: 'Processing'
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+      setProgress(30);
+
+      // 3. Build Form Data payload
+      const formData = new FormData();
+      formData.append("tender_id", newTender.id);
+      if (files.length > 0) {
+        files.forEach((f) => {
+          formData.append("files", f);
+        });
+      } else {
+        formData.append("raw_text", rawText.trim());
+        formData.append("filename", resolvedFilename);
+      }
+
       const progressInterval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 90) {
             clearInterval(progressInterval);
             return 90;
           }
-          return prev + 5;
+          return prev + 10;
         });
-      }, 800);
+      }, 500);
 
-      setStatusText("Sending to TenderIQ AI Engine for multi-section parsing...");
+      setStatusText("Triggering background AI processing...");
       const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
       const response = await fetch(`${baseUrl}/api/upload`, {
         method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`
+        },
         body: formData,
       });
 
@@ -204,15 +240,16 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
 
       if (!response.ok) {
         const errorData = await response.json();
+        // If backend fails, mark tender as failed in DB
+        await supabase.from('tenders').update({ status: 'Failed' }).eq('id', newTender.id);
         throw new Error(errorData.detail || "Failed to process document.");
       }
 
       setProgress(100);
-      setStatusText("Analysis completed successfully!");
-      const data = await response.json();
+      setStatusText("Tender queued successfully!");
       
       setTimeout(() => {
-        onUploadSuccess(data);
+        onUploadSuccess(newTender);
         resetState();
       }, 500);
 

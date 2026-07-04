@@ -12,7 +12,7 @@ interface TenderDetailProps {
   tender: {
     id: string;
     name: string;
-    status: 'Active' | 'Submitted' | 'Expired';
+    status: 'Active' | 'Submitted' | 'Expired' | 'Processing' | 'Failed';
     deadline: string | null;
     file_size: number;
     page_count: number | null;
@@ -21,7 +21,7 @@ interface TenderDetailProps {
     created_at: string;
   };
   onDelete: (id: string) => void;
-  onUpdateStatus: (id: string, status: 'Active' | 'Submitted' | 'Expired') => void;
+  onUpdateStatus: (id: string, status: 'Active' | 'Submitted' | 'Expired' | 'Processing' | 'Failed') => void;
 }
 
 export const TenderDetail: React.FC<TenderDetailProps> = ({ 
@@ -173,6 +173,94 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
   };
 
   const daysLeft = getDaysRemaining();
+
+  if (tender.status === 'Processing') {
+    return (
+      <div className="analysis-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', textAlign: 'center', padding: '40px' }}>
+        <div style={{
+          background: 'rgba(255, 255, 255, 0.03)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid var(--border-light)',
+          borderRadius: '16px',
+          padding: '48px',
+          maxWidth: '560px',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}>
+          <div className="processing-spinner" style={{
+            width: '64px',
+            height: '64px',
+            border: '4px solid rgba(16, 185, 129, 0.1)',
+            borderTop: '4px solid var(--primary)',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            marginBottom: '24px'
+          }}></div>
+          <h2 style={{ fontSize: '22px', color: '#ffffff', marginBottom: '12px' }}>AI Compliance Ingestion Active</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
+            TenderIQ is currently processing your bidding package. This includes recursive document parsing, semantic text chunking, and AI compliance audit extraction. Please wait...
+          </p>
+          <div style={{ width: '100%', height: '6px', background: 'rgba(255, 255, 255, 0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: 'var(--primary)', width: '60%', borderRadius: '3px', animation: 'progress-bar-loading 2s infinite ease-in-out' }}></div>
+          </div>
+        </div>
+        <style>{`
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          @keyframes progress-bar-loading {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(200%); }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  if (tender.status === 'Failed') {
+    return (
+      <div className="analysis-panel" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '400px', textAlign: 'center', padding: '40px' }}>
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.03)',
+          backdropFilter: 'blur(8px)',
+          border: '1px solid rgba(239, 68, 68, 0.2)',
+          borderRadius: '16px',
+          padding: '48px',
+          maxWidth: '560px',
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.3)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center'
+        }}>
+          <ShieldAlert size={48} color="var(--accent-red)" style={{ marginBottom: '20px' }} />
+          <h2 style={{ fontSize: '22px', color: '#ffffff', marginBottom: '12px' }}>Ingestion Failed</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: '1.6', marginBottom: '24px' }}>
+            We encountered an unexpected error while parsing your documents or matching vector embeddings. Please try uploading the tender package again.
+          </p>
+          <button 
+            onClick={() => onDelete(tender.id)}
+            style={{
+              background: 'var(--accent-red)',
+              color: '#ffffff',
+              border: 'none',
+              padding: '10px 24px',
+              borderRadius: '8px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              transition: 'background var(--transition-speed)'
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.background = '#dc2626')}
+            onMouseOut={(e) => (e.currentTarget.style.background = 'var(--accent-red)')}
+          >
+            Remove Record
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="analysis-panel printable-area">

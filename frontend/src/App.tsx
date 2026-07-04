@@ -54,6 +54,57 @@ function App() {
     }
   }, [session]);
 
+  // 3. Poll status of processing tenders from FastAPI background engine
+  useEffect(() => {
+    const processingTenders = tenders.filter(t => t.status === 'Processing');
+    if (processingTenders.length === 0) return;
+
+    const interval = setInterval(async () => {
+      let statusUpdated = false;
+      const updatedTenders = await Promise.all(
+        tenders.map(async (t) => {
+          if (t.status === 'Processing') {
+            try {
+              const { data: { session: currentSession } } = await supabase.auth.getSession();
+              const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+              const response = await fetch(`${baseUrl}/api/tenders/${t.id}/status`, {
+                headers: currentSession?.access_token ? {
+                  "Authorization": `Bearer ${currentSession.access_token}`
+                } : {}
+              });
+              if (response.ok) {
+                const updatedData = await response.json();
+                if (updatedData && updatedData.status !== 'Processing') {
+                  statusUpdated = true;
+                  return { ...t, ...updatedData };
+                }
+              }
+            } catch (err) {
+              console.error("Error polling tender status:", err);
+            }
+          }
+          return t;
+        })
+      );
+
+      if (statusUpdated) {
+        setTenders(updatedTenders);
+        const activeTenderBefore = tenders.find(item => item.id === activeTenderId);
+        const activeTenderAfter = updatedTenders.find(item => item.id === activeTenderId);
+        if (activeTenderBefore?.status === 'Processing' && activeTenderAfter?.status === 'Active') {
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#10b981', '#3b82f6', '#ffffff']
+          });
+        }
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [tenders, activeTenderId]);
+
   const handleAuthSuccess = () => {
     // Session is updated automatically by listener
   };
@@ -62,45 +113,11 @@ function App() {
     // Optional loader styling trigger
   };
 
-  const handleUploadSuccess = async (result: any) => {
-    if (!session?.user) return;
-
-    try {
-      // Insert the analysis results into the Supabase database
-      const { data: newTender, error } = await supabase
-        .from('tenders')
-        .insert({
-          user_id: session.user.id,
-          name: result.name,
-          file_size: result.file_size,
-          page_count: result.page_count,
-          extracted_text: result.extracted_text,
-          analysis_result: result.analysis,
-          deadline: result.analysis.deadline || null,
-          status: 'Active'
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      // Reload tenders and set active
-      setTenders((prev) => [newTender, ...prev]);
-      setActiveTenderId(newTender.id);
-      setShowUploadForm(false);
-
-      // Trigger premium success confetti explosion
-      confetti({
-        particleCount: 150,
-        spread: 80,
-        origin: { y: 0.6 },
-        colors: ['#10b981', '#3b82f6', '#ffffff']
-      });
-
-    } catch (err) {
-      console.error("Failed to save tender to database:", err);
-      alert("AI analyzed successfully, but saving to your database failed. Please verify your Supabase schema.");
-    }
+  const handleUploadSuccess = async (newTender: any) => {
+    // Add new processing tender to tenders list and select it
+    setTenders((prev) => [newTender, ...prev]);
+    setActiveTenderId(newTender.id);
+    setShowUploadForm(false);
   };
 
   const handleUploadError = (err: string) => {
@@ -122,7 +139,7 @@ function App() {
     }
   };
 
-  const handleUpdateStatus = async (id: string, status: 'Active' | 'Submitted' | 'Expired') => {
+  const handleUpdateStatus = async (id: string, status: 'Active' | 'Submitted' | 'Expired' | 'Processing' | 'Failed') => {
     try {
       const { error } = await supabase
         .from('tenders')

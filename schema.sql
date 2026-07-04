@@ -68,3 +68,72 @@ CREATE POLICY "Users can delete their own QA"
 ON public.tender_qa FOR DELETE 
 TO authenticated 
 USING (auth.uid() = user_id);
+
+
+-- 3. Enable pgvector and create Chunking table for RAG
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS public.tender_chunks (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tender_id UUID REFERENCES public.tenders(id) ON DELETE CASCADE,
+    chunk_content TEXT NOT NULL,
+    page_number INT,
+    embedding vector(768), -- Google Gemini Text Embeddings use 768 dimensions
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- Enable RLS on Chunks
+ALTER TABLE public.tender_chunks ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view their own tender chunks"
+ON public.tender_chunks FOR SELECT
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.tenders 
+        WHERE public.tenders.id = public.tender_chunks.tender_id 
+          AND public.tenders.user_id = auth.uid()
+    )
+);
+
+CREATE POLICY "Users can insert their own tender chunks"
+ON public.tender_chunks FOR INSERT
+TO authenticated
+WITH CHECK (
+    EXISTS (
+        SELECT 1 FROM public.tenders 
+        WHERE public.tenders.id = public.tender_chunks.tender_id 
+          AND public.tenders.user_id = auth.uid()
+    )
+);
+
+-- Cosine Similarity Matching Function
+CREATE OR REPLACE FUNCTION match_tender_chunks (
+    query_embedding vector(768),
+    match_threshold FLOAT,
+    match_count INT,
+    filter_tender_id UUID
+)
+RETURNS TABLE (
+    id UUID,
+    chunk_content TEXT,
+    page_number INT,
+    similarity FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        tender_chunks.id,
+        tender_chunks.chunk_content,
+        tender_chunks.page_number,
+        1 - (tender_chunks.embedding <=> query_embedding) AS similarity
+    FROM tender_chunks
+    WHERE tender_chunks.tender_id = filter_tender_id
+      AND 1 - (tender_chunks.embedding <=> query_embedding) > match_threshold
+    ORDER BY tender_chunks.embedding <=> query_embedding
+    LIMIT match_count;
+END;
+$$;
+

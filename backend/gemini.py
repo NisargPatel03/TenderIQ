@@ -205,3 +205,36 @@ JSON Structure:
                 "gaps": ["Could not calculate GAP analysis due to system error."],
                 "explanation": f"Failed to execute Go-NoGo analysis: {str(e)}"
             }
+
+    def chunk_text(self, text: str, chunk_size: int = 1500, overlap: int = 300) -> list[str]:
+        """Splits raw text into sliding window chunks of chunk_size characters with overlap."""
+        if not text:
+            return []
+        chunks = []
+        start = 0
+        text_len = len(text)
+        while start < text_len:
+            end = min(start + chunk_size, text_len)
+            chunks.append(text[start:end])
+            start += chunk_size - overlap
+            if start >= text_len or end == text_len:
+                break
+        return chunks
+
+    def generate_embeddings(self, chunks: list[str]) -> list[list[float]]:
+        """Calls Google Generative AI to get embeddings for chunks of text."""
+        if not chunks:
+            return []
+        try:
+            response = genai.embed_content(
+                model="models/text-embedding-004",
+                content=chunks,
+                task_type="retrieval_document"
+            )
+            # Response contains a list of embeddings under 'embeddings' key
+            return [list(e) for e in response['embeddings']]
+        except Exception as e:
+            print(f"Error generating embeddings: {e}")
+            # Return zero vectors as fallback so database insertion doesn't fail
+            return [[0.0] * 768 for _ in chunks]
+

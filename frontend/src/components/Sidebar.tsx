@@ -7,7 +7,7 @@ import { useNotification } from './NotificationProvider';
 export interface Tender {
   id: string;
   name: string;
-  status: 'Active' | 'Submitted' | 'Expired';
+  status: 'Active' | 'Submitted' | 'Expired' | 'Processing' | 'Failed';
   deadline: string | null;
   file_size: number;
   page_count: number | null;

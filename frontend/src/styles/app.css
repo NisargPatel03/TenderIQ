@@ -331,6 +331,25 @@ button, input, textarea, select {
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
+.status-processing {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  animation: pulse-glow 1.5s infinite ease-in-out;
+}
+
+.status-failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--accent-red);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+
 .sidebar-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--border-color);
