@@ -205,7 +205,9 @@ button, input, textarea, select {
 /* App Layout */
 .app-container {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
+  overflow: hidden;
 }
 
 /* Sidebar */
@@ -587,7 +589,7 @@ button, input, textarea, select {
   display: flex;
   flex: 1;
   overflow: hidden;
-  height: calc(100vh - 70px);
+  height: 100%;
 }
 
 .analysis-panel {
@@ -1120,6 +1122,9 @@ button, input, textarea, select {
   .app-container {
     flex-direction: column;
     min-height: 100vh;
+    height: auto;
+    max-height: none;
+    overflow: visible;
   }
 
   .sidebar {
