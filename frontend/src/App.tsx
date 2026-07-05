@@ -6,8 +6,10 @@ import type { Tender } from './components/Sidebar';
 import { UploadZone } from './components/UploadZone';
 import { TenderDetail } from './components/TenderDetail';
 import { ChatBot } from './components/ChatBot';
-import { FolderOpen, FileCheck, Sparkles, CheckCircle2, Menu, X } from 'lucide-react';
+import { FolderOpen, FileCheck, Sparkles, CheckCircle2, Menu, X, Columns } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { WorkspaceSettingsModal } from './components/WorkspaceSettingsModal';
+import { KanbanBoard } from './components/KanbanBoard';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -17,6 +19,12 @@ function App() {
   const [activeTenderId, setActiveTenderId] = useState<string | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Multi-tenancy states
+  const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [showTeamModal, setShowTeamModal] = useState(false);
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'upload' | 'kanban'>('upload');
 
   // 1. Listen to Auth State changes
   useEffect(() => {
@@ -32,13 +40,96 @@ function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Fetch or auto-create organizations
+  const initWorkspaces = async () => {
+    if (!session?.user) return;
+    try {
+      // 1. Fetch organizations where user is a member
+      const { data: memberOrgs, error: memberError } = await supabase
+        .from('org_members')
+        .select('org_id, role, organizations(id, name, owner_id)')
+        .eq('user_id', session.user.id);
+
+      if (memberError) throw memberError;
+
+      const fetchedOrgs = (memberOrgs || [])
+        .map((m: any) => m.organizations)
+        .filter((o: any) => o !== null);
+
+      // Check if user is the direct owner of organizations they are not in org_members for
+      const { data: ownedOrgs, error: ownerError } = await supabase
+        .from('organizations')
+        .select('id, name, owner_id')
+        .eq('owner_id', session.user.id);
+
+      if (ownerError) throw ownerError;
+
+      // Merge and remove duplicates
+      const orgMap = new Map();
+      fetchedOrgs.forEach((o: any) => orgMap.set(o.id, o));
+      (ownedOrgs || []).forEach((o: any) => orgMap.set(o.id, o));
+
+      let finalOrgs = Array.from(orgMap.values());
+
+      // 2. If no organizations exist, auto-create a Personal Workspace
+      if (finalOrgs.length === 0) {
+        const emailPrefix = session.user.email?.split('@')[0] || 'My';
+        const personalName = `${emailPrefix}'s Workspace`;
+
+        const { data: newOrg, error: createOrgError } = await supabase
+          .from('organizations')
+          .insert({
+            name: personalName,
+            owner_id: session.user.id
+          })
+          .select()
+          .single();
+
+        if (createOrgError) throw createOrgError;
+
+        // Also add user as Owner in org_members
+        const { error: memberInsertError } = await supabase
+          .from('org_members')
+          .insert({
+            org_id: newOrg.id,
+            user_id: session.user.id,
+            user_email: session.user.email || '',
+            role: 'Owner'
+          });
+
+        if (memberInsertError) throw memberInsertError;
+
+        finalOrgs = [newOrg];
+      }
+
+      setOrgs(finalOrgs);
+      
+      // Default to the first organization if none is active or active is not in the list
+      const savedOrgId = localStorage.getItem(`tenderiq_active_org_${session.user.id}`);
+      const matchedOrg = finalOrgs.find(o => o.id === savedOrgId);
+      const targetOrgId = matchedOrg ? matchedOrg.id : finalOrgs[0].id;
+      
+      setActiveOrgId(targetOrgId);
+      localStorage.setItem(`tenderiq_active_org_${session.user.id}`, targetOrgId);
+    } catch (err) {
+      console.error("Workspace initialization error:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (session?.user) {
+      initWorkspaces();
+    }
+  }, [session]);
+
   // 2. Fetch Tenders list from Supabase
   const fetchTenders = async () => {
-    if (!session?.user) return;
+    if (!session?.user || !activeOrgId) return;
     try {
       const { data, error } = await supabase
         .from('tenders')
         .select('*')
+        .eq('org_id', activeOrgId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -49,22 +140,23 @@ function App() {
   };
 
   useEffect(() => {
-    if (session?.user) {
+    if (session?.user && activeOrgId) {
       fetchTenders();
     }
-  }, [session]);
+  }, [session, activeOrgId]);
 
   // 3. Poll status of 'Processing' tenders every 3s — works because Render
   //    runs background tasks to completion (no serverless kill).
   useEffect(() => {
     const processingTenders = tenders.filter(t => t.status === 'Processing');
-    if (processingTenders.length === 0) return;
+    if (processingTenders.length === 0 || !activeOrgId) return;
 
     const interval = setInterval(async () => {
       try {
         const { data: freshList, error } = await supabase
           .from('tenders')
           .select('*')
+          .eq('org_id', activeOrgId)
           .order('created_at', { ascending: false });
 
         if (error || !freshList) return;
@@ -90,7 +182,7 @@ function App() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, [tenders, activeTenderId]);
+  }, [tenders, activeTenderId, activeOrgId]);
 
   const handleAuthSuccess = () => {
     // Session is updated automatically by listener
@@ -146,6 +238,54 @@ function App() {
     }
   };
 
+  const handleCreateWorkspace = async () => {
+    const name = prompt("Enter a name for your new team workspace:");
+    if (!name || !name.trim()) return;
+
+    try {
+      const { data: newOrg, error: createOrgError } = await supabase
+        .from('organizations')
+        .insert({
+          name: name.trim(),
+          owner_id: session.user.id
+        })
+        .select()
+        .single();
+
+      if (createOrgError) throw createOrgError;
+
+      // Add user as Owner in org_members
+      const { error: memberInsertError } = await supabase
+        .from('org_members')
+        .insert({
+          org_id: newOrg.id,
+          user_id: session.user.id,
+          user_email: session.user.email || '',
+          role: 'Owner'
+        });
+
+      if (memberInsertError) throw memberInsertError;
+
+      setOrgs(prev => [...prev, newOrg]);
+      setActiveOrgId(newOrg.id);
+      localStorage.setItem(`tenderiq_active_org_${session.user.id}`, newOrg.id);
+      
+      confetti({
+        particleCount: 80,
+        spread: 50,
+        colors: ['#10b981', '#ffffff']
+      });
+    } catch (err) {
+      console.error("Failed to create workspace:", err);
+    }
+  };
+
+  const handleTenderStageChange = (tenderId: string, newStage: string) => {
+    setTenders((prev) =>
+      prev.map((t) => (t.id === tenderId ? { ...t, kanban_stage: newStage } : t))
+    );
+  };
+
   const activeTender = tenders.find((t) => t.id === activeTenderId);
 
   // Compute metrics overview
@@ -197,6 +337,16 @@ function App() {
           setSidebarOpen(false); // Close drawer
         }}
         userEmail={session.user.email || 'Guest User'}
+        orgs={orgs}
+        activeOrgId={activeOrgId}
+        onSelectOrg={(id) => {
+          setActiveOrgId(id);
+          localStorage.setItem(`tenderiq_active_org_${session.user.id}`, id);
+          setActiveTenderId(null);
+          setShowUploadForm(true);
+        }}
+        onCreateOrg={handleCreateWorkspace}
+        onManageTeam={() => setShowTeamModal(true)}
       />
 
       {/* Main Workspace Frame */}
@@ -204,54 +354,110 @@ function App() {
         {showUploadForm ? (
           /* Upload Dashboard screen */
           <>
-            <div className="header">
-              <h2 style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
                 <Sparkles size={18} style={{ color: 'var(--primary)' }} />
                 Procurement Intelligence Center
               </h2>
-            </div>
 
-            <div className="dashboard-grid">
-              {/* Stats overview rows */}
-              <div className="stats-row">
-                <div className="stat-card">
-                  <div className="stat-icon" style={{ color: 'var(--secondary)' }}>
-                    <FolderOpen size={24} />
-                  </div>
-                  <div className="stat-details">
-                    <h3>{totalAnalyzed}</h3>
-                    <p>Total Tenders Audited</p>
-                  </div>
-                </div>
-
-                <div className="stat-card">
-                  <div className="stat-icon" style={{ color: 'var(--primary)' }}>
-                    <CheckCircle2 size={24} />
-                  </div>
-                  <div className="stat-details">
-                    <h3>{activeBids}</h3>
-                    <p>Active Bid Pursuits</p>
-                  </div>
-                </div>
-
-                <div className="stat-card">
-                  <div className="stat-icon" style={{ color: 'var(--accent-gold)' }}>
-                    <FileCheck size={24} />
-                  </div>
-                  <div className="stat-details">
-                    <h3>{submittedBids}</h3>
-                    <p>Submitted Proposals</p>
-                  </div>
-                </div>
+              <div style={{ display: 'flex', backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--border-light)', borderRadius: '8px', padding: '2px' }}>
+                <button
+                  onClick={() => setActiveDashboardTab('upload')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: activeDashboardTab === 'upload' ? 'var(--bg-tertiary)' : 'transparent',
+                    color: activeDashboardTab === 'upload' ? '#ffffff' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Sparkles size={14} /> Upload & Analytics
+                </button>
+                <button
+                  onClick={() => setActiveDashboardTab('kanban')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: activeDashboardTab === 'kanban' ? 'var(--bg-tertiary)' : 'transparent',
+                    color: activeDashboardTab === 'kanban' ? '#ffffff' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Columns size={14} /> Kanban Bid Board
+                </button>
               </div>
-
-              {/* Upload drag-n-drop workspace */}
-              <UploadZone
-                onUploadStart={handleUploadStart}
-                onUploadSuccess={handleUploadSuccess}
-                onUploadError={handleUploadError}
-              />
             </div>
+
+            {activeDashboardTab === 'upload' ? (
+              <div className="dashboard-grid">
+                {/* Stats overview rows */}
+                <div className="stats-row">
+                  <div className="stat-card">
+                    <div className="stat-icon" style={{ color: 'var(--secondary)' }}>
+                      <FolderOpen size={24} />
+                    </div>
+                    <div className="stat-details">
+                      <h3>{totalAnalyzed}</h3>
+                      <p>Total Tenders Audited</p>
+                    </div>
+                  </div>
+
+                  <div className="stat-card">
+                    <div className="stat-icon" style={{ color: 'var(--primary)' }}>
+                      <CheckCircle2 size={24} />
+                    </div>
+                    <div className="stat-details">
+                      <h3>{activeBids}</h3>
+                      <p>Active Bid Pursuits</p>
+                    </div>
+                  </div>
+
+                  <div className="stat-card">
+                    <div className="stat-icon" style={{ color: 'var(--accent-gold)' }}>
+                      <FileCheck size={24} />
+                    </div>
+                    <div className="stat-details">
+                      <h3>{submittedBids}</h3>
+                      <p>Submitted Proposals</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Upload drag-n-drop workspace */}
+                <UploadZone
+                  onUploadStart={handleUploadStart}
+                  onUploadSuccess={handleUploadSuccess}
+                  onUploadError={handleUploadError}
+                  activeOrgId={activeOrgId}
+                />
+              </div>
+            ) : (
+              <div style={{ flex: 1, height: 'calc(100% - 60px)', overflow: 'hidden' }}>
+                <KanbanBoard
+                  tenders={tenders}
+                  onSelectTender={(id) => {
+                    setActiveTenderId(id);
+                    setShowUploadForm(false);
+                  }}
+                  onDeleteTender={handleDeleteTender}
+                  onTenderStageChange={handleTenderStageChange}
+                />
+              </div>
+            )}
           </>
         ) : (
           /* Split Workspace Screen (Detail sections + custom Chatbot panel) */
@@ -262,6 +468,8 @@ function App() {
                 tender={activeTender}
                 onDelete={handleDeleteTender}
                 onUpdateStatus={handleUpdateStatus}
+                userId={session.user.id}
+                userEmail={session.user.email || ''}
               />
 
               {/* Q&A Side panel chatbot */}
@@ -274,6 +482,15 @@ function App() {
           )
         )}
       </main>
+
+      {/* Workspace Settings / Team Management modal */}
+      <WorkspaceSettingsModal
+        isOpen={showTeamModal}
+        onClose={() => setShowTeamModal(false)}
+        orgId={activeOrgId}
+        orgName={orgs.find(o => o.id === activeOrgId)?.name || 'Active Workspace'}
+        userId={session.user.id}
+      />
     </div>
   );
 }

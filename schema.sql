@@ -137,3 +137,235 @@ BEGIN
 END;
 $$;
 
+
+-- ─── MULTI-TENANCY & COLLABORATION SCHEMAS ───────────────────────────────────
+
+-- 4. Create Organizations Table
+CREATE TABLE IF NOT EXISTS public.organizations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name TEXT NOT NULL,
+    owner_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- 5. Create Organization Members Table
+CREATE TABLE IF NOT EXISTS public.org_members (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_email TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('Owner', 'Admin', 'Legal Auditor', 'Technical Reviewer', 'Bid Manager')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL,
+    UNIQUE (org_id, user_id)
+);
+
+-- Enable RLS on Organizations
+ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view organizations they are members of"
+ON public.organizations FOR SELECT
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = organizations.id
+          AND org_members.user_id = auth.uid()
+    ) OR owner_id = auth.uid()
+);
+
+CREATE POLICY "Owners can update their organizations"
+ON public.organizations FOR UPDATE
+TO authenticated
+USING (owner_id = auth.uid())
+WITH CHECK (owner_id = auth.uid());
+
+CREATE POLICY "Users can create organizations"
+ON public.organizations FOR INSERT
+TO authenticated
+WITH CHECK (owner_id = auth.uid());
+
+CREATE POLICY "Owners can delete their organizations"
+ON public.organizations FOR DELETE
+TO authenticated
+USING (owner_id = auth.uid());
+
+
+-- Enable RLS on Members
+ALTER TABLE public.org_members ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Members can view membership list"
+ON public.org_members FOR SELECT
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.org_members AS m
+        WHERE m.org_id = org_members.org_id
+          AND m.user_id = auth.uid()
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations AS o
+        WHERE o.id = org_members.org_id
+          AND o.owner_id = auth.uid()
+    )
+);
+
+CREATE POLICY "Owners and Admins can manage memberships"
+ON public.org_members FOR ALL
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.org_members AS m
+        WHERE m.org_id = org_members.org_id
+          AND m.user_id = auth.uid()
+          AND m.role IN ('Owner', 'Admin')
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations AS o
+        WHERE o.id = org_members.org_id
+          AND o.owner_id = auth.uid()
+    )
+);
+
+
+-- 6. Add columns to Tenders Table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tenders' AND column_name='org_id') THEN
+        ALTER TABLE public.tenders ADD COLUMN org_id UUID REFERENCES public.organizations(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='tenders' AND column_name='kanban_stage') THEN
+        ALTER TABLE public.tenders ADD COLUMN kanban_stage TEXT NOT NULL DEFAULT 'Discovered' 
+            CHECK (kanban_stage IN ('Discovered', 'Under Audit', 'Approved to Bid', 'Writing Proposal', 'Submitted'));
+    END IF;
+END $$;
+
+
+-- Drop old non-org scoped policies from tenders to recreate them
+DROP POLICY IF EXISTS "Users can view their own tenders" ON public.tenders;
+DROP POLICY IF EXISTS "Users can create their own tenders" ON public.tenders;
+DROP POLICY IF EXISTS "Users can update their own tenders" ON public.tenders;
+DROP POLICY IF EXISTS "Users can delete their own tenders" ON public.tenders;
+
+CREATE POLICY "Users can create tenders in their organization"
+ON public.tenders FOR INSERT
+TO authenticated
+WITH CHECK (
+    user_id = auth.uid() AND (
+        org_id IS NULL OR EXISTS (
+            SELECT 1 FROM public.org_members
+            WHERE org_members.org_id = tenders.org_id
+              AND org_members.user_id = auth.uid()
+        )
+    )
+);
+
+CREATE POLICY "Users can view organization tenders"
+ON public.tenders FOR SELECT
+TO authenticated
+USING (
+    user_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = tenders.org_id
+          AND org_members.user_id = auth.uid()
+    )
+);
+
+CREATE POLICY "Users can update organization tenders"
+ON public.tenders FOR UPDATE
+TO authenticated
+USING (
+    user_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = tenders.org_id
+          AND org_members.user_id = auth.uid()
+    )
+)
+WITH CHECK (
+    user_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = tenders.org_id
+          AND org_members.user_id = auth.uid()
+    )
+);
+
+CREATE POLICY "Users can delete organization tenders"
+ON public.tenders FOR DELETE
+TO authenticated
+USING (
+    user_id = auth.uid() OR EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = tenders.org_id
+          AND org_members.user_id = auth.uid()
+          AND org_members.role IN ('Owner', 'Admin', 'Bid Manager')
+    )
+);
+
+
+-- 7. Create Clause Comments Table
+CREATE TABLE IF NOT EXISTS public.clause_comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tender_id UUID REFERENCES public.tenders(id) ON DELETE CASCADE,
+    section_key TEXT NOT NULL,
+    clause_text TEXT NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_email TEXT NOT NULL,
+    comment_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- Enable RLS on Clause Comments
+ALTER TABLE public.clause_comments ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view comments on organization tenders"
+ON public.clause_comments FOR SELECT
+TO authenticated
+USING (
+    EXISTS (
+        SELECT 1 FROM public.tenders
+        WHERE tenders.id = clause_comments.tender_id
+          AND (tenders.user_id = auth.uid() OR EXISTS (
+              SELECT 1 FROM public.org_members
+              WHERE org_members.org_id = tenders.org_id
+                AND org_members.user_id = auth.uid()
+          ))
+    )
+);
+
+CREATE POLICY "Users can add comments to organization tenders"
+ON public.clause_comments FOR INSERT
+TO authenticated
+WITH CHECK (
+    user_id = auth.uid() AND EXISTS (
+        SELECT 1 FROM public.tenders
+        WHERE tenders.id = clause_comments.tender_id
+          AND (tenders.user_id = auth.uid() OR EXISTS (
+              SELECT 1 FROM public.org_members
+              WHERE org_members.org_id = tenders.org_id
+                AND org_members.user_id = auth.uid()
+          ))
+    )
+);
+
+CREATE POLICY "Users can delete their own comments"
+ON public.clause_comments FOR DELETE
+TO authenticated
+USING (user_id = auth.uid());
+
+
+-- 8. RPC function to get user id by email (for invitations)
+CREATE OR REPLACE FUNCTION get_user_id_by_email(email_addr text)
+RETURNS uuid
+SECURITY DEFINER -- Runs with elevated permissions to read auth.users
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    target_id uuid;
+BEGIN
+    SELECT id INTO target_id
+    FROM auth.users
+    WHERE email = email_addr;
+    
+    RETURN target_id;
+END;
+$$;
+
+

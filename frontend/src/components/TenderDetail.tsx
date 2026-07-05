@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileText, Calendar, ShieldCheck, Briefcase, DollarSign, 
   Files, ShieldAlert, Award, PhoneCall, Copy, Check, FileDown, 
-  Trash2, Clock
+  Trash2, Clock, MessageSquare
 } from 'lucide-react';
 import { TimelineVisualizer } from './TimelineVisualizer.tsx';
 import { GoNoGoScorecard } from './GoNoGoScorecard.tsx';
 import { useNotification } from './NotificationProvider';
+import { ClauseComments } from './ClauseComments.tsx';
 
 interface TenderDetailProps {
   tender: {
@@ -22,21 +23,27 @@ interface TenderDetailProps {
   };
   onDelete: (id: string) => void;
   onUpdateStatus: (id: string, status: 'Active' | 'Submitted' | 'Expired' | 'Processing' | 'Failed') => void;
+  userId: string;
+  userEmail: string;
 }
 
 export const TenderDetail: React.FC<TenderDetailProps> = ({ 
   tender, 
   onDelete, 
-  onUpdateStatus 
+  onUpdateStatus,
+  userId,
+  userEmail,
 }) => {
   const { showToast } = useNotification();
   const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'gonogo'>('analysis');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [selectedSectionKey, setSelectedSectionKey] = useState<string>('executive_summary');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [activeCommentIdx, setActiveCommentIdx] = useState<number | null>(null);
 
   useEffect(() => {
     setSearchTerm('');
+    setActiveCommentIdx(null);
   }, [selectedSectionKey]);
 
   const sections = tender.analysis_result || {};
@@ -481,9 +488,54 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                               }}
                             >
                               {filteredBullets.length > 0 ? (
-                                <ul className="analysis-bullets">
+                                <ul className="analysis-bullets" style={{ listStyle: 'none', paddingLeft: 0 }}>
                                   {filteredBullets.map((bullet: string, idx: number) => (
-                                    <li key={idx}>{bullet}</li>
+                                    <li key={idx} style={{ 
+                                      position: 'relative', 
+                                      padding: '12px 14px', 
+                                      marginBottom: '8px', 
+                                      backgroundColor: 'rgba(255,255,255,0.01)', 
+                                      border: '1px solid var(--border-light)', 
+                                      borderRadius: '8px',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: '4px'
+                                    }} className="clause-item">
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                                        <span style={{ fontSize: '13px', lineHeight: '1.5', flex: 1 }}>{bullet}</span>
+                                        <button 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveCommentIdx(activeCommentIdx === idx ? null : idx);
+                                          }}
+                                          style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: activeCommentIdx === idx ? 'var(--primary)' : 'var(--text-muted)',
+                                            cursor: 'pointer',
+                                            padding: '4px',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            borderRadius: '4px',
+                                            transition: 'all 0.2s'
+                                          }}
+                                          className="comment-toggle-btn"
+                                          title="Comment on this clause"
+                                        >
+                                          <MessageSquare size={14} />
+                                        </button>
+                                      </div>
+                                      
+                                      {activeCommentIdx === idx && (
+                                        <ClauseComments
+                                          tenderId={tender.id}
+                                          sectionKey={selectedSectionKey}
+                                          clauseText={bullet}
+                                          userId={userId}
+                                          userEmail={userEmail}
+                                        />
+                                      )}
+                                    </li>
                                   ))}
                                 </ul>
                               ) : (
@@ -608,6 +660,20 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
         <GoNoGoScorecard tender={tender} />
       )}
 
+      <style>{`
+        .clause-item:hover .comment-toggle-btn {
+          color: var(--primary) !important;
+          opacity: 1 !important;
+        }
+        .comment-toggle-btn {
+          opacity: 0.6;
+        }
+        .comment-toggle-btn:hover {
+          background-color: rgba(16, 185, 129, 0.1) !important;
+          color: var(--primary) !important;
+          opacity: 1 !important;
+        }
+      `}</style>
     </div>
   );
 };

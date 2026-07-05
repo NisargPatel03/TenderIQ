@@ -6,12 +6,14 @@ interface UploadZoneProps {
   onUploadStart: () => void;
   onUploadSuccess: (result: any) => void;
   onUploadError: (err: string) => void;
+  activeOrgId: string | null;
 }
 
 export const UploadZone: React.FC<UploadZoneProps> = ({
   onUploadStart,
   onUploadSuccess,
   onUploadError,
+  activeOrgId,
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -194,6 +196,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         .from('tenders')
         .insert({
           user_id: session.user.id,
+          org_id: activeOrgId,
           name: resolvedFilename,
           file_size: totalSize,
           status: 'Processing'

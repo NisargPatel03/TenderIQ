@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../utils/supabase';
-import { Search, Plus, LogOut, Trash2, Calendar, FileType } from 'lucide-react';
+import { Search, Plus, LogOut, Trash2, Calendar, FileType, Users } from 'lucide-react';
 import tenderiqLogo from '../assets/tenderiq_logo.png';
 import { useNotification } from './NotificationProvider';
 
@@ -23,6 +23,11 @@ interface SidebarProps {
   onDeleteTender: (id: string) => void;
   onNewTenderClick: () => void;
   userEmail: string;
+  orgs: Array<{ id: string; name: string }>;
+  activeOrgId: string | null;
+  onSelectOrg: (id: string) => void;
+  onCreateOrg: () => void;
+  onManageTeam: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -32,6 +37,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDeleteTender,
   onNewTenderClick,
   userEmail,
+  orgs,
+  activeOrgId,
+  onSelectOrg,
+  onCreateOrg,
+  onManageTeam,
 }) => {
   const { showConfirm } = useNotification();
   const [search, setSearch] = useState('');
@@ -72,7 +82,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <span className="logo-text" style={{ fontSize: '20px' }}>TenderIQ</span>
         </div>
 
-        <button className="btn btn-primary" onClick={onNewTenderClick} style={{ width: '100%' }}>
+        {/* Workspace Switcher */}
+        <div className="workspace-switcher" style={{ margin: '14px 0 10px 0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+            <span style={{ fontSize: '10px', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: '600' }}>Active Workspace</span>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={onManageTeam} title="Workspace Settings / Team Members" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center' }} className="ws-action-btn">
+                <Users size={12} />
+              </button>
+              <button onClick={onCreateOrg} title="Create New Workspace" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontWeight: 'bold', fontSize: '11px' }} className="ws-action-btn">
+                + New
+              </button>
+            </div>
+          </div>
+          <select
+            value={activeOrgId || ''}
+            onChange={(e) => onSelectOrg(e.target.value)}
+            style={{
+              width: '100%',
+              backgroundColor: 'var(--bg-secondary)',
+              border: '1px solid var(--border-light)',
+              borderRadius: '8px',
+              color: '#ffffff',
+              padding: '8px',
+              fontSize: '13px',
+              cursor: 'pointer',
+              outline: 'none'
+            }}
+          >
+            {orgs.map((org) => (
+              <option key={org.id} value={org.id}>{org.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <button className="btn btn-primary" onClick={onNewTenderClick} style={{ width: '100%', marginTop: '6px' }}>
           <Plus size={16} /> Analyze New Tender
         </button>
 
