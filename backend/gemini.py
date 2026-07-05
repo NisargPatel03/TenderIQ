@@ -289,33 +289,22 @@ JSON Structure:
 
     def generate_embeddings(self, chunks: list[str]) -> list[list[float]]:
         """
-        Calls the Google AI v1 REST API directly for embeddings.
-        Bypasses google-generativeai SDK which routes to v1beta (where
-        embedding models are unavailable).
-        Model: text-embedding-004 → 768-dimension vectors.
+        Generates 768-dimension embeddings for the given text chunks using
+        the official Google GenerativeAI SDK and the gemini-embedding-001 model.
         """
         if not chunks:
             return []
 
-        api_key = os.environ.get("GEMINI_API_KEY", "")
-        url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
-
         embeddings = []
         for chunk in chunks:
             try:
-                resp = http_requests.post(
-                    url,
-                    params={"key": api_key},
-                    json={
-                        "model": "models/text-embedding-004",
-                        "content": {"parts": [{"text": chunk}]},
-                        "taskType": "RETRIEVAL_DOCUMENT",
-                    },
-                    timeout=30,
+                res = genai.embed_content(
+                    model="models/gemini-embedding-001",
+                    content=chunk,
+                    task_type="retrieval_document",
+                    output_dimensionality=768
                 )
-                resp.raise_for_status()
-                values = resp.json()["embedding"]["values"]
-                embeddings.append(values)
+                embeddings.append(res['embedding'])
             except Exception as e:
                 print(f"Embedding error for chunk (using zero vector): {e}")
                 embeddings.append([0.0] * 768)
