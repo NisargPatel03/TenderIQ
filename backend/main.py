@@ -1,4 +1,5 @@
 import os
+import io
 from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header, BackgroundTasks
