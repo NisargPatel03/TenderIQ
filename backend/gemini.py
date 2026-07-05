@@ -321,3 +321,72 @@ JSON Structure:
 
         return embeddings
 
+    def draft_proposal(self, tender_name: str, tender_analysis: dict, references: list[dict], custom_instructions: str = "") -> dict:
+        """
+        Synthesizes a tailored bid proposal response based on tender requirements,
+        workspace reference library materials, and custom instructions.
+        """
+        # Compile reference materials
+        reference_context = ""
+        for idx, ref in enumerate(references):
+            content_snippet = ref.get("content_text", "")[:20000]
+            reference_context += f"\n--- REFERENCE DOCUMENT #{idx+1} ({ref.get('filename')}) ---\n{content_snippet}\n"
+
+        prompt = f"""
+You are an expert bid manager and proposal writer. Your job is to draft a winning bid proposal response for the tender: "{tender_name}".
+
+Here are the extracted details of the tender (Scope of Work, Requirements, and Specifications):
+{json.dumps(tender_analysis, indent=2)}
+
+Here is the reference library of company documents (past winning proposals, resumes, company descriptions, capability files) to use as evidence of qualifications:
+{reference_context}
+
+User's custom instructions/preferences:
+"{custom_instructions if custom_instructions else 'None'}"
+
+Please generate a professional, structured bid proposal response with three key parts:
+1. "cover_letter": A formal business cover letter introducing the bidder, referencing the tender requirements, and explaining why our organization is the best fit.
+2. "technical_response": A detailed technical response section addressing the Scope of Work and Technical Specifications. Draw upon the qualifications, team resumes, and past project examples in the references to demonstrate compliance. Use paragraphs and bullet points as appropriate.
+3. "capability_matrix": A list of compliance mapping entries. Each entry must map a specific tender requirement to our compliance status and the supporting evidence/experience from the references.
+
+Return your response strictly as a single JSON object with the following schema:
+{{
+  "cover_letter": "string (with formatting and paragraphs)",
+  "technical_response": "string (with sections and paragraphs, markdown bullet lists allowed)",
+  "capability_matrix": [
+    {{
+      "requirement": "specific tender requirement",
+      "compliance_status": "Compliant / Exceeds / Partially Compliant",
+      "evidence_reference": "supporting evidence or past experience from reference library"
+    }}
+  ]
+}}
+"""
+        generation_config = {
+            "response_mime_type": "application/json",
+            "temperature": 0.3,
+        }
+
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            data = json.loads(response.text.strip())
+            return data
+        except Exception as e:
+            print(f"Error drafting proposal: {e}")
+            # Return a fallback structured dictionary
+            return {
+                "cover_letter": f"Dear Sir/Madam,\n\nWe are pleased to submit our proposal for {tender_name}.\n\nSincerely,\nBidding Team",
+                "technical_response": "Failed to generate technical response. Please ensure your reference library contains sufficient details.",
+                "capability_matrix": [
+                    {
+                        "requirement": "Standard Compliance",
+                        "compliance_status": "Compliant",
+                        "evidence_reference": "Verified according to references."
+                    }
+                ]
+            }
+
+

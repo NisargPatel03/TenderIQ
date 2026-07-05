@@ -8,6 +8,8 @@ import { TimelineVisualizer } from './TimelineVisualizer.tsx';
 import { GoNoGoScorecard } from './GoNoGoScorecard.tsx';
 import { useNotification } from './NotificationProvider';
 import { ClauseComments } from './ClauseComments.tsx';
+import { ProposalWriter } from './ProposalWriter.tsx';
+
 
 const renderFormattedText = (text: string) => {
   if (!text) return '';
@@ -36,7 +38,9 @@ interface TenderDetailProps {
   onUpdateStatus: (id: string, status: 'Active' | 'Submitted' | 'Expired' | 'Processing' | 'Failed') => void;
   userId: string;
   userEmail: string;
+  orgId: string | null;
 }
+
 
 export const TenderDetail: React.FC<TenderDetailProps> = ({ 
   tender, 
@@ -44,9 +48,10 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
   onUpdateStatus,
   userId,
   userEmail,
+  orgId,
 }) => {
   const { showToast } = useNotification();
-  const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'gonogo'>('analysis');
+  const [activeTab, setActiveTab] = useState<'analysis' | 'timeline' | 'gonogo' | 'proposal'>('analysis');
   const [copiedSection, setCopiedSection] = useState<string | null>(null);
   const [selectedSectionKey, setSelectedSectionKey] = useState<string>('executive_summary');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -369,6 +374,12 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
         >
           Bid Go-NoGo Scorecard
         </button>
+        <button 
+          className={`tab-btn ${activeTab === 'proposal' ? 'active' : ''}`}
+          onClick={() => setActiveTab('proposal')}
+        >
+          Proposal Writer
+        </button>
       </div>
 
       {/* Main Tab Render */}
@@ -669,6 +680,10 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
 
       {activeTab === 'gonogo' && (
         <GoNoGoScorecard tender={tender} />
+      )}
+
+      {activeTab === 'proposal' && (
+        <ProposalWriter tenderId={tender.id} tenderName={tender.name} orgId={orgId} />
       )}
 
       <style>{`

@@ -470,6 +470,7 @@ function App() {
                 onUpdateStatus={handleUpdateStatus}
                 userId={session.user.id}
                 userEmail={session.user.email || ''}
+                orgId={activeOrgId}
               />
 
               {/* Q&A Side panel chatbot */}

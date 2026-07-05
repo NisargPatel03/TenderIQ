@@ -63,6 +63,14 @@ class GoNoGoRequest(BaseModel):
     company_profile: str
 
 
+class DraftProposalRequest(BaseModel):
+    tender_id: str
+    org_id: str
+    custom_instructions: Optional[str] = ""
+    reference_ids: Optional[List[str]] = []
+
+
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
 @app.get("/")
 def read_root():
@@ -350,6 +358,263 @@ def evaluate_bidding_suitability(request: GoNoGoRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Reference Library & Proposal Writer Endpoints ────────────────────────────
+
+@app.post("/api/references/upload")
+async def upload_reference_document(
+    org_id: str = Form(...),
+    file: UploadFile = File(...),
+    authorization: Optional[str] = Header(None)
+):
+    """Uploads a reference document, extracts text content, and saves it to workspace_references."""
+    try:
+        file_bytes = await file.read()
+        text_content, _ = extract_content(file_bytes, file.filename)
+        
+        db = get_supabase(authorization)
+        
+        # Get active user ID
+        user_id = None
+        try:
+            user_res = db.auth.get_user()
+            if user_res and user_res.user:
+                user_id = user_res.user.id
+        except Exception:
+            pass
+
+        res = db.table("workspace_references").insert({
+            "org_id": org_id,
+            "user_id": user_id,
+            "filename": file.filename,
+            "file_size": len(file_bytes),
+            "content_text": text_content
+        }).execute()
+
+        if not res.data:
+            raise HTTPException(status_code=400, detail="Failed to save reference document.")
+
+        return res.data[0]
+    except ExtractionError as ee:
+        raise HTTPException(status_code=400, detail=str(ee))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def create_docx_file(tender_name: str, draft: dict) -> io.BytesIO:
+    """Helper to generate a beautifully styled MS Word Document response."""
+    import io
+    from docx import Document
+    from docx.shared import Pt, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    doc = Document()
+    
+    # 1. Title Page / Cover Page
+    for _ in range(3):
+        doc.add_paragraph()
+        
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_run = title_p.add_run("BID PROPOSAL RESPONSE")
+    title_run.font.name = "Arial"
+    title_run.font.size = Pt(28)
+    title_run.font.bold = True
+    title_run.font.color.rgb = RGBColor(30, 58, 138)  # Deep Navy Blue
+    
+    sub_p = doc.add_paragraph()
+    sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    sub_run = sub_p.add_run(f"Project/Tender: {tender_name}")
+    sub_run.font.name = "Arial"
+    sub_run.font.size = Pt(14)
+    sub_run.font.italic = True
+    sub_run.font.color.rgb = RGBColor(100, 116, 139)  # Slate Gray
+    
+    for _ in range(4):
+        doc.add_paragraph()
+        
+    meta_p = doc.add_paragraph()
+    meta_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    meta_run = meta_p.add_run("Prepared by: Bidding Team\nGenerated via TenderIQ Proposal Engine")
+    meta_run.font.name = "Arial"
+    meta_run.font.size = Pt(11)
+    meta_run.font.color.rgb = RGBColor(71, 85, 105)
+    
+    doc.add_page_break()
+    
+    # 2. Executive Cover Letter
+    h1 = doc.add_paragraph()
+    h1_run = h1.add_run("SECTION 1: Executive Cover Letter")
+    h1_run.font.name = "Arial"
+    h1_run.font.size = Pt(18)
+    h1_run.font.bold = True
+    h1_run.font.color.rgb = RGBColor(30, 58, 138)
+    
+    cover_text = draft.get("cover_letter", "")
+    for para in cover_text.split("\n\n"):
+        if para.strip():
+            p = doc.add_paragraph()
+            p_run = p.add_run(para.strip())
+            p_run.font.name = "Arial"
+            p_run.font.size = Pt(11)
+            p.paragraph_format.line_spacing = 1.15
+            
+    doc.add_page_break()
+    
+    # 3. Technical Response Section
+    h2 = doc.add_paragraph()
+    h2_run = h2.add_run("SECTION 2: Technical Response & Statement of Work")
+    h2_run.font.name = "Arial"
+    h2_run.font.size = Pt(18)
+    h2_run.font.bold = True
+    h2_run.font.color.rgb = RGBColor(30, 58, 138)
+    
+    tech_text = draft.get("technical_response", "")
+    for para in tech_text.split("\n\n"):
+        para_strip = para.strip()
+        if not para_strip:
+            continue
+        if para_strip.startswith("### "):
+            p = doc.add_paragraph()
+            p_run = p.add_run(para_strip[4:])
+            p_run.font.name = "Arial"
+            p_run.font.size = Pt(13)
+            p_run.font.bold = True
+            p_run.font.color.rgb = RGBColor(15, 118, 110)
+        elif para_strip.startswith("## "):
+            p = doc.add_paragraph()
+            p_run = p.add_run(para_strip[3:])
+            p_run.font.name = "Arial"
+            p_run.font.size = Pt(15)
+            p_run.font.bold = True
+            p_run.font.color.rgb = RGBColor(30, 58, 138)
+        else:
+            p = doc.add_paragraph()
+            lines = para_strip.split("\n")
+            if len(lines) > 1 and all(l.strip().startswith("-") or l.strip().startswith("*") for l in lines if l.strip()):
+                for line in lines:
+                    if line.strip():
+                        clean_line = line.strip()[1:].strip()
+                        bp = doc.add_paragraph(style='List Bullet')
+                        bp_run = bp.add_run(clean_line)
+                        bp_run.font.name = "Arial"
+                        bp_run.font.size = Pt(11)
+            else:
+                p_run = p.add_run(para_strip)
+                p_run.font.name = "Arial"
+                p_run.font.size = Pt(11)
+                p.paragraph_format.line_spacing = 1.15
+                
+    doc.add_page_break()
+    
+    # 4. Capability Compliance Matrix
+    h3 = doc.add_paragraph()
+    h3_run = h3.add_run("SECTION 3: Capability Compliance Matrix")
+    h3_run.font.name = "Arial"
+    h3_run.font.size = Pt(18)
+    h3_run.font.bold = True
+    h3_run.font.color.rgb = RGBColor(30, 58, 138)
+    
+    matrix = draft.get("capability_matrix", [])
+    if matrix:
+        table = doc.add_table(rows=1, cols=3)
+        table.style = 'Light Shading Accent 1'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Tender Requirement'
+        hdr_cells[1].text = 'Compliance Status'
+        hdr_cells[2].text = 'Evidence / Reference'
+        
+        for cell in hdr_cells:
+            for paragraph in cell.paragraphs:
+                for run in paragraph.runs:
+                    run.font.name = "Arial"
+                    run.font.bold = True
+                    run.font.size = Pt(10.5)
+                    
+        for item in matrix:
+            row_cells = table.add_row().cells
+            row_cells[0].text = item.get("requirement", "N/A")
+            row_cells[1].text = item.get("compliance_status", "Compliant")
+            row_cells[2].text = item.get("evidence_reference", "N/A")
+            
+            for cell in row_cells:
+                for paragraph in cell.paragraphs:
+                    for run in paragraph.runs:
+                        run.font.name = "Arial"
+                        run.font.size = Pt(10)
+    else:
+        p = doc.add_paragraph()
+        p_run = p.add_run("No compliance requirements mapped.")
+        p_run.font.name = "Arial"
+        p_run.font.italic = True
+        
+    file_stream = io.BytesIO()
+    doc.save(file_stream)
+    file_stream.seek(0)
+    return file_stream
+
+
+class DownloadProposalRequest(BaseModel):
+    tender_name: str
+    draft: dict
+
+
+@app.post("/api/proposal/draft")
+def draft_proposal_response(
+    request: DraftProposalRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Generates a structured proposal draft from references and returns the JSON draft data."""
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="Gemini API Client is not configured.")
+    try:
+        db = get_supabase(authorization)
+        
+        # 1. Fetch active tender metadata and analysis
+        tender_res = db.table("tenders").select("name, analysis_result").eq("id", request.tender_id).single().execute()
+        if not tender_res.data:
+            raise HTTPException(status_code=404, detail="Tender not found or access denied.")
+        tender = tender_res.data
+
+        # 2. Fetch selected reference library records
+        query = db.table("workspace_references").select("filename, content_text").eq("org_id", request.org_id)
+        if request.reference_ids:
+            query = query.in_("id", request.reference_ids)
+        refs_res = query.execute()
+        references = refs_res.data or []
+
+        # 3. Call Gemini to draft the content
+        draft_data = gemini_client.draft_proposal(
+            tender_name=tender["name"],
+            tender_analysis=tender["analysis_result"],
+            references=references,
+            custom_instructions=request.custom_instructions
+        )
+
+        return draft_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/proposal/download")
+def download_proposal_document(request: DownloadProposalRequest):
+    """Generates a styled DOCX file from the preview draft and returns the file stream."""
+    try:
+        file_stream = create_docx_file(request.tender_name, request.draft)
+        filename = f"{request.tender_name.replace(' ', '_')}_Bid_Proposal.docx"
+        
+        from fastapi.responses import StreamingResponse
+        return StreamingResponse(
+            file_stream,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 if __name__ == "__main__":
     import uvicorn
+    import io
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

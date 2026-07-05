@@ -388,3 +388,39 @@ END;
 $$;
 
 
+-- 9. Create Workspace References Table (for Proposal Writer Reference Library)
+CREATE TABLE IF NOT EXISTS public.workspace_references (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    filename TEXT NOT NULL,
+    file_size BIGINT NOT NULL,
+    content_text TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- Enable RLS
+ALTER TABLE public.workspace_references ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view workspace references" ON public.workspace_references;
+DROP POLICY IF EXISTS "Users can manage workspace references" ON public.workspace_references;
+
+CREATE POLICY "Users can view workspace references"
+ON public.workspace_references FOR SELECT
+TO authenticated
+USING (
+    public.is_org_member(org_id, auth.uid())
+);
+
+CREATE POLICY "Users can manage workspace references"
+ON public.workspace_references FOR ALL
+TO authenticated
+USING (
+    public.is_org_member(org_id, auth.uid())
+)
+WITH CHECK (
+    public.is_org_member(org_id, auth.uid())
+);
+
+
+

@@ -243,6 +243,17 @@ Track procurement proposals through a unified team lifecycle:
 
 ---
 
+### 17. 🤖 Auto-Bid Proposal Writer (The Killer Feature)
+
+Once compliance requirements are extracted, the next business challenge is actually writing the proposal response document. TenderIQ automates this:
+- **Reference Library:** Lets users upload previous winning proposals, resumes, and company descriptions as a reference library for each organization.
+- **AI Proposal Compiler:** The engine automatically correlates the active tender's Scope of Work and Technical Requirements with company credentials.
+- **Stepped Compiler Progress:** Displays a real-time compilation visualizer that breaks down the synthesis phases.
+- **Interactive Previewer:** Preview draft sections (Cover Letter, Technical Response, Compliance Matrix) directly inside the workspace tab.
+- **Styled MS Word Download (.docx):** Downloads the bid response in a fully styled, beautifully formatted Word document with custom tables and structural headers.
+
+---
+
 ## Architecture
 
 ```
@@ -388,6 +399,18 @@ comment_text  TEXT
 created_at    TIMESTAMP
 ```
 
+### `public.workspace_references`
+```sql
+id            UUID PRIMARY KEY
+org_id        UUID → public.organizations (ON DELETE CASCADE)
+user_id       UUID → auth.users (ON DELETE SET NULL)
+filename      TEXT
+file_size     BIGINT
+content_text  TEXT
+created_at    TIMESTAMP WITH TIME ZONE
+```
+
+
 ### PostgreSQL Helper & Security Definer Functions
 - **`match_tender_chunks`**: Cosine similarity matching:
   ```sql
@@ -475,6 +498,64 @@ Evaluates bid suitability against company profile.
 Polls a tender's current processing status and returns its data fields.
 
 **Headers:** `Authorization: Bearer <supabase_jwt>`
+
+### `POST /api/references/upload`
+Uploads reference material (winning proposals, resumes, company profiles), extracts its text, and saves it to the reference library.
+
+**Form Data:**
+| Field | Type | Required |
+|---|---|---|
+| `org_id` | string (UUID) | ✅ |
+| `file` | File | ✅ (PDF/DOCX/TXT) |
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+### `POST /api/proposal/draft`
+Generates a structured, professional proposal response JSON (Cover Letter, Technical Response, and Capability Matrix) by compiling selected references and active tender requirements.
+
+**Body:**
+```json
+{
+  "tender_id": "uuid",
+  "org_id": "uuid",
+  "custom_instructions": "e.g. Highlight ISO 27001",
+  "reference_ids": ["uuid_1", "uuid_2"]
+}
+```
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:**
+```json
+{
+  "cover_letter": "formatted text",
+  "technical_response": "formatted text",
+  "capability_matrix": [
+    {
+      "requirement": "string",
+      "compliance_status": "string",
+      "evidence_reference": "string"
+    }
+  ]
+}
+```
+
+### `POST /api/proposal/download`
+Builds and styles a Word document (`.docx`) using the JSON draft details, and returns the file stream.
+
+**Body:**
+```json
+{
+  "tender_name": "Tender Title",
+  "draft": {
+    "cover_letter": "...",
+    "technical_response": "...",
+    "capability_matrix": [...]
+  }
+}
+```
+
+**Response:** Binary Stream (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`)
 
 ---
 
