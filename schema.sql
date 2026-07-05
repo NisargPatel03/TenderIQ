@@ -159,18 +159,66 @@ CREATE TABLE IF NOT EXISTS public.org_members (
     UNIQUE (org_id, user_id)
 );
 
+
+-- ─── SECURITY DEFINER FUNCTIONS TO PREVENT RECURSION ─────────────────────────
+
+-- Helper function to check if a user is a member of an organization (bypasses RLS recursively)
+CREATE OR REPLACE FUNCTION public.is_org_member(org_id uuid, user_uuid uuid)
+RETURNS boolean
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = $1
+          AND org_members.user_id = $2
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE organizations.id = $1
+          AND organizations.owner_id = $2
+    );
+END;
+$$;
+
+-- Helper function to check if a user has admin/owner privileges in an organization
+CREATE OR REPLACE FUNCTION public.is_org_admin(org_id uuid, user_uuid uuid)
+RETURNS boolean
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.org_members
+        WHERE org_members.org_id = $1
+          AND org_members.user_id = $2
+          AND org_members.role IN ('Owner', 'Admin')
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE organizations.id = $1
+          AND organizations.owner_id = $2
+    );
+END;
+$$;
+
+
+-- ─── RLS POLICIES FOR ORGANIZATIONS ──────────────────────────────────────────
+
 -- Enable RLS on Organizations
 ALTER TABLE public.organizations ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view organizations they are members of" ON public.organizations;
+DROP POLICY IF EXISTS "Owners can update their organizations" ON public.organizations;
+DROP POLICY IF EXISTS "Users can create organizations" ON public.organizations;
+DROP POLICY IF EXISTS "Owners can delete their organizations" ON public.organizations;
 
 CREATE POLICY "Users can view organizations they are members of"
 ON public.organizations FOR SELECT
 TO authenticated
 USING (
-    EXISTS (
-        SELECT 1 FROM public.org_members
-        WHERE org_members.org_id = organizations.id
-          AND org_members.user_id = auth.uid()
-    ) OR owner_id = auth.uid()
+    public.is_org_member(id, auth.uid())
 );
 
 CREATE POLICY "Owners can update their organizations"
@@ -190,40 +238,30 @@ TO authenticated
 USING (owner_id = auth.uid());
 
 
+-- ─── RLS POLICIES FOR MEMBERS ────────────────────────────────────────────────
+
 -- Enable RLS on Members
 ALTER TABLE public.org_members ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Members can view membership list" ON public.org_members;
+DROP POLICY IF EXISTS "Owners and Admins can manage memberships" ON public.org_members;
 
 CREATE POLICY "Members can view membership list"
 ON public.org_members FOR SELECT
 TO authenticated
 USING (
-    EXISTS (
-        SELECT 1 FROM public.org_members AS m
-        WHERE m.org_id = org_members.org_id
-          AND m.user_id = auth.uid()
-    ) OR EXISTS (
-        SELECT 1 FROM public.organizations AS o
-        WHERE o.id = org_members.org_id
-          AND o.owner_id = auth.uid()
-    )
+    public.is_org_member(org_id, auth.uid())
 );
 
 CREATE POLICY "Owners and Admins can manage memberships"
 ON public.org_members FOR ALL
 TO authenticated
 USING (
-    EXISTS (
-        SELECT 1 FROM public.org_members AS m
-        WHERE m.org_id = org_members.org_id
-          AND m.user_id = auth.uid()
-          AND m.role IN ('Owner', 'Admin')
-    ) OR EXISTS (
-        SELECT 1 FROM public.organizations AS o
-        WHERE o.id = org_members.org_id
-          AND o.owner_id = auth.uid()
-    )
+    public.is_org_admin(org_id, auth.uid())
 );
 
+
+-- ─── ALTER TENDERS TABLE & SCRIPTS ───────────────────────────────────────────
 
 -- 6. Add columns to Tenders Table
 DO $$
@@ -238,22 +276,22 @@ BEGIN
 END $$;
 
 
--- Drop old non-org scoped policies from tenders to recreate them
+-- Drop old non-org/org-recursive policies from tenders
 DROP POLICY IF EXISTS "Users can view their own tenders" ON public.tenders;
 DROP POLICY IF EXISTS "Users can create their own tenders" ON public.tenders;
 DROP POLICY IF EXISTS "Users can update their own tenders" ON public.tenders;
 DROP POLICY IF EXISTS "Users can delete their own tenders" ON public.tenders;
+DROP POLICY IF EXISTS "Users can create tenders in their organization" ON public.tenders;
+DROP POLICY IF EXISTS "Users can view organization tenders" ON public.tenders;
+DROP POLICY IF EXISTS "Users can update organization tenders" ON public.tenders;
+DROP POLICY IF EXISTS "Users can delete organization tenders" ON public.tenders;
 
 CREATE POLICY "Users can create tenders in their organization"
 ON public.tenders FOR INSERT
 TO authenticated
 WITH CHECK (
     user_id = auth.uid() AND (
-        org_id IS NULL OR EXISTS (
-            SELECT 1 FROM public.org_members
-            WHERE org_members.org_id = tenders.org_id
-              AND org_members.user_id = auth.uid()
-        )
+        org_id IS NULL OR public.is_org_member(org_id, auth.uid())
     )
 );
 
@@ -261,43 +299,28 @@ CREATE POLICY "Users can view organization tenders"
 ON public.tenders FOR SELECT
 TO authenticated
 USING (
-    user_id = auth.uid() OR EXISTS (
-        SELECT 1 FROM public.org_members
-        WHERE org_members.org_id = tenders.org_id
-          AND org_members.user_id = auth.uid()
-    )
+    user_id = auth.uid() OR (org_id IS NOT NULL AND public.is_org_member(org_id, auth.uid()))
 );
 
 CREATE POLICY "Users can update organization tenders"
 ON public.tenders FOR UPDATE
 TO authenticated
 USING (
-    user_id = auth.uid() OR EXISTS (
-        SELECT 1 FROM public.org_members
-        WHERE org_members.org_id = tenders.org_id
-          AND org_members.user_id = auth.uid()
-    )
+    user_id = auth.uid() OR (org_id IS NOT NULL AND public.is_org_member(org_id, auth.uid()))
 )
 WITH CHECK (
-    user_id = auth.uid() OR EXISTS (
-        SELECT 1 FROM public.org_members
-        WHERE org_members.org_id = tenders.org_id
-          AND org_members.user_id = auth.uid()
-    )
+    user_id = auth.uid() OR (org_id IS NOT NULL AND public.is_org_member(org_id, auth.uid()))
 );
 
 CREATE POLICY "Users can delete organization tenders"
 ON public.tenders FOR DELETE
 TO authenticated
 USING (
-    user_id = auth.uid() OR EXISTS (
-        SELECT 1 FROM public.org_members
-        WHERE org_members.org_id = tenders.org_id
-          AND org_members.user_id = auth.uid()
-          AND org_members.role IN ('Owner', 'Admin', 'Bid Manager')
-    )
+    user_id = auth.uid() OR (org_id IS NOT NULL AND public.is_org_admin(org_id, auth.uid()))
 );
 
+
+-- ─── RLS POLICIES FOR COMMENTS ───────────────────────────────────────────────
 
 -- 7. Create Clause Comments Table
 CREATE TABLE IF NOT EXISTS public.clause_comments (
@@ -314,6 +337,10 @@ CREATE TABLE IF NOT EXISTS public.clause_comments (
 -- Enable RLS on Clause Comments
 ALTER TABLE public.clause_comments ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can view comments on organization tenders" ON public.clause_comments;
+DROP POLICY IF EXISTS "Users can add comments to organization tenders" ON public.clause_comments;
+DROP POLICY IF EXISTS "Users can delete their own comments" ON public.clause_comments;
+
 CREATE POLICY "Users can view comments on organization tenders"
 ON public.clause_comments FOR SELECT
 TO authenticated
@@ -321,11 +348,7 @@ USING (
     EXISTS (
         SELECT 1 FROM public.tenders
         WHERE tenders.id = clause_comments.tender_id
-          AND (tenders.user_id = auth.uid() OR EXISTS (
-              SELECT 1 FROM public.org_members
-              WHERE org_members.org_id = tenders.org_id
-                AND org_members.user_id = auth.uid()
-          ))
+          AND (tenders.user_id = auth.uid() OR (tenders.org_id IS NOT NULL AND public.is_org_member(tenders.org_id, auth.uid())))
     )
 );
 
@@ -336,11 +359,7 @@ WITH CHECK (
     user_id = auth.uid() AND EXISTS (
         SELECT 1 FROM public.tenders
         WHERE tenders.id = clause_comments.tender_id
-          AND (tenders.user_id = auth.uid() OR EXISTS (
-              SELECT 1 FROM public.org_members
-              WHERE org_members.org_id = tenders.org_id
-                AND org_members.user_id = auth.uid()
-          ))
+          AND (tenders.user_id = auth.uid() OR (tenders.org_id IS NOT NULL AND public.is_org_member(tenders.org_id, auth.uid())))
     )
 );
 
