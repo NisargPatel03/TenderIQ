@@ -174,6 +174,10 @@ BEGIN
         SELECT 1 FROM public.org_members
         WHERE org_members.org_id = $1
           AND org_members.user_id = $2
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE organizations.id = $1
+          AND organizations.owner_id = $2
     );
 END;
 $$;
@@ -191,6 +195,10 @@ BEGIN
         WHERE org_members.org_id = $1
           AND org_members.user_id = $2
           AND org_members.role IN ('Owner', 'Admin')
+    ) OR EXISTS (
+        SELECT 1 FROM public.organizations
+        WHERE organizations.id = $1
+          AND organizations.owner_id = $2
     );
 END;
 $$;
@@ -210,7 +218,7 @@ CREATE POLICY "Users can view organizations they are members of"
 ON public.organizations FOR SELECT
 TO authenticated
 USING (
-    public.is_org_member(id, auth.uid())
+    owner_id = auth.uid() OR public.is_org_member(id, auth.uid())
 );
 
 CREATE POLICY "Owners can update their organizations"
