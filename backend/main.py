@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -17,12 +17,10 @@ from gemini import GeminiClient
 app = FastAPI(title="TenderIQ API", version="1.0.0")
 
 # ─── CORS ────────────────────────────────────────────────────────────────────
-# Allow ALL origins so Vercel edge + local dev both work.
-# The vercel.json edge-level headers act as a second layer of defence.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=False,          # must be False when allow_origins=["*"]
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -99,7 +97,7 @@ def get_tender_status(
         supabase = get_supabase(authorization)
         res = (
             supabase.table("tenders")
-            .select("id,status,analysis_result,extracted_text,page_count,file_size")
+            .select("id,status,analysis_result,extracted_text,page_count,file_size,deadline,name,created_at")
             .eq("id", tender_id)
             .single()
             .execute()
@@ -111,6 +109,7 @@ def get_tender_status(
 
 @app.post("/api/upload")
 async def upload_document(
+    background_tasks: BackgroundTasks,
     tender_id: str = Form(...),
     files: List[UploadFile] = File(default=[]),
     file: Optional[UploadFile] = File(None),
@@ -119,10 +118,10 @@ async def upload_document(
     authorization: Optional[str] = Header(None),
 ):
     """
-    Synchronous upload handler compatible with Vercel serverless.
-    The frontend pre-creates the tender row (status='Processing').
-    This endpoint extracts text, runs AI analysis, embeds chunks,
-    then updates the row to status='Active'.
+    Async upload endpoint for Render persistent server.
+    Reads file bytes immediately, then returns 202 and schedules
+    all heavy processing (AI analysis + embedding) as a background task.
+    The frontend polls /api/tenders/{id}/status to track progress.
     """
     if not gemini_client:
         raise HTTPException(
@@ -130,25 +129,56 @@ async def upload_document(
             detail="Gemini API Client is not configured. Check backend environment variables.",
         )
 
+    # ── Read file bytes NOW (UploadFile objects become invalid after response) ─
+    files_data: List[tuple] = []
+    all_files = list(files or [])
+    if file:
+        all_files.append(file)
+
+    for f in all_files:
+        data = await f.read()
+        files_data.append((data, f.filename))
+
+    # ── Schedule background processing and return 202 immediately ─────────────
+    background_tasks.add_task(
+        process_tender_background,
+        tender_id=tender_id,
+        files_data=files_data,
+        raw_text=raw_text,
+        authorization=authorization,
+    )
+
+    return {
+        "status": "queued",
+        "tender_id": tender_id,
+        "message": "Tender queued for background processing. Poll /api/tenders/{id}/status for updates.",
+    }
+
+
+def process_tender_background(
+    tender_id: str,
+    files_data: List[tuple],
+    raw_text: Optional[str],
+    authorization: Optional[str],
+):
+    """
+    Background worker — runs AFTER the 202 response is sent to the client.
+    On Render (persistent server) this function runs to completion.
+    """
     # ── 1. Text extraction ────────────────────────────────────────────────────
     extracted_text = ""
     page_count = 0
     file_size = 0
 
     try:
-        all_files = list(files or [])
-        if file:
-            all_files.append(file)
-
-        if all_files:
+        if files_data:
             parts, total_pages, total_size = [], 0, 0
-            for f in all_files:
-                data = await f.read()
+            for data, fname in files_data:
                 total_size += len(data)
-                f_text, f_pages = extract_content(data, f.filename)
+                f_text, f_pages = extract_content(data, fname)
                 parts.append(
                     f"\n=========================================\n"
-                    f"DOCUMENT: {f.filename}\n"
+                    f"DOCUMENT: {fname}\n"
                     f"=========================================\n\n{f_text}"
                 )
                 total_pages += f_pages
@@ -162,28 +192,25 @@ async def upload_document(
             page_count = max(1, len(extracted_text) // 3000 + 1)
 
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="Either file uploads or raw_text is required.",
-            )
+            _mark_failed(tender_id, authorization)
+            print(f"[BG] No files or raw_text provided for tender {tender_id}")
+            return
 
-    except ExtractionError as ee:
-        # Mark as Failed in DB then propagate
-        _mark_failed(tender_id, authorization)
-        raise HTTPException(status_code=400, detail=str(ee))
-    except HTTPException:
-        raise
     except Exception as e:
         _mark_failed(tender_id, authorization)
-        raise HTTPException(status_code=500, detail=f"Text extraction failed: {e}")
+        print(f"[BG] Text extraction failed for tender {tender_id}: {e}")
+        return
 
     # ── 2. AI compliance analysis ─────────────────────────────────────────────
     try:
+        print(f"[BG] Starting AI analysis for tender {tender_id}...")
         analysis = gemini_client.extract_tender_details(extracted_text)
         deadline = analysis.get("deadline")
+        print(f"[BG] AI analysis complete for tender {tender_id}")
     except Exception as e:
         _mark_failed(tender_id, authorization)
-        raise HTTPException(status_code=500, detail=f"AI analysis failed: {e}")
+        print(f"[BG] AI analysis failed for tender {tender_id}: {e}")
+        return
 
     # ── 3. Update tender record to Active ─────────────────────────────────────
     try:
@@ -193,24 +220,26 @@ async def upload_document(
                 "status": "Active",
                 "page_count": page_count,
                 "file_size": file_size,
-                # Store a 100 000-char snippet to keep DB lean
                 "extracted_text": extracted_text[:100_000],
                 "analysis_result": analysis,
                 "deadline": deadline,
             }
         ).eq("id", tender_id).execute()
+        print(f"[BG] Tender {tender_id} updated to Active")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Database update failed: {e}")
+        print(f"[BG] DB update failed for tender {tender_id}: {e}")
+        return
 
-    # ── 4. Best-effort RAG chunking & embeddings (non-blocking on failure) ────
+    # ── 4. RAG chunking & embeddings ─────────────────────────────────────────
     try:
+        print(f"[BG] Starting RAG chunking for tender {tender_id}...")
         chunks = gemini_client.chunk_text(extracted_text)
         if chunks:
-            batch_size = 50
-            embeddings = []
-            for i in range(0, len(chunks), batch_size):
-                batch = chunks[i : i + batch_size]
-                embeddings.extend(gemini_client.generate_embeddings(batch))
+            print(f"[BG] Generating embeddings for {len(chunks)} chunks...")
+            embeddings = gemini_client.generate_embeddings(chunks)
+
+            # Delete old chunks for this tender before inserting fresh ones
+            supabase.table("tender_chunks").delete().eq("tender_id", tender_id).execute()
 
             payload = [
                 {
@@ -223,24 +252,17 @@ async def upload_document(
             ]
             if payload:
                 supabase.table("tender_chunks").insert(payload).execute()
+                print(f"[BG] Inserted {len(payload)} chunks for tender {tender_id}")
     except Exception as e:
-        # Chunking failure is non-fatal — the tender is already Active
-        print(f"RAG chunking skipped for tender {tender_id}: {e}")
-
-    return {
-        "status": "completed",
-        "tender_id": tender_id,
-        "message": "Tender processed and saved successfully.",
-    }
+        # Chunking failure is non-fatal — tender is already Active
+        print(f"[BG] RAG chunking skipped for tender {tender_id}: {e}")
 
 
 def _mark_failed(tender_id: str, auth_header: Optional[str]):
     """Helper to update a tender row to Failed status on error."""
     try:
         supabase = get_supabase(auth_header)
-        supabase.table("tenders").update({"status": "Failed"}).eq(
-            "id", tender_id
-        ).execute()
+        supabase.table("tenders").update({"status": "Failed"}).eq("id", tender_id).execute()
     except Exception as db_err:
         print(f"Could not mark tender {tender_id} as Failed: {db_err}")
 
@@ -252,14 +274,11 @@ def ask_question(
     """
     Answers a free-form user query.
     Primary context: analysis_result (structured AI extraction) fetched from DB.
-    Secondary context: pgvector RAG chunks (if tender_id provided).
-    Final fallback: raw document_text from the request body.
+    Secondary context: pgvector RAG chunks.
+    Final fallback: raw document_text from request body.
     """
     if not gemini_client:
-        raise HTTPException(
-            status_code=500,
-            detail="Gemini API Client is not configured.",
-        )
+        raise HTTPException(status_code=500, detail="Gemini API Client is not configured.")
 
     rag_context = ""
     analysis_result = None
@@ -268,7 +287,7 @@ def ask_question(
         try:
             supabase = get_supabase(authorization)
 
-            # ── Fetch the structured analysis_result from the tender row ──────
+            # Fetch structured analysis_result
             tender_row = (
                 supabase.table("tenders")
                 .select("analysis_result")
@@ -279,7 +298,7 @@ def ask_question(
             if tender_row.data:
                 analysis_result = tender_row.data.get("analysis_result")
 
-            # ── RAG vector search for supplementary chunks ────────────────────
+            # RAG vector search for supplementary chunks
             try:
                 query_embeddings = gemini_client.generate_embeddings([request.question])
                 if query_embeddings:
@@ -302,7 +321,6 @@ def ask_question(
         except Exception as err:
             print(f"Could not fetch tender data for QA: {err}")
 
-    # Raw text fallback (either RAG chunks or original document_text)
     raw_context = rag_context or request.document_text[:80_000]
 
     try:
@@ -319,14 +337,9 @@ def ask_question(
 
 @app.post("/api/gonogo")
 def evaluate_bidding_suitability(request: GoNoGoRequest):
-    """
-    Analyses a company's suitability (0-100 score) against the tender.
-    """
+    """Analyses a company's suitability (0-100 score) against the tender."""
     if not gemini_client:
-        raise HTTPException(
-            status_code=500,
-            detail="Gemini API Client is not configured.",
-        )
+        raise HTTPException(status_code=500, detail="Gemini API Client is not configured.")
     try:
         evaluation = gemini_client.evaluate_go_nogo(
             analysis_result=request.analysis_result,

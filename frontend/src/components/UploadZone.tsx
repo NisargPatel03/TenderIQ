@@ -216,18 +216,10 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         formData.append("filename", resolvedFilename);
       }
 
-      // 4. Animate progress while waiting for synchronous backend response
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => {
-          if (prev >= 88) {
-            clearInterval(progressInterval);
-            return 88;
-          }
-          return prev + 6;
-        });
-      }, 1200);
+      // 4. Animate progress bar while sending to backend
+      setProgress(60);
+      setStatusText("Sending documents to TenderIQ AI Engine...");
 
-      setStatusText("AI is extracting compliance data from your documents...");
       const baseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
       const response = await fetch(`${baseUrl}/api/upload`, {
         method: "POST",
@@ -237,34 +229,21 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         body: formData,
       });
 
-      clearInterval(progressInterval);
-
       if (!response.ok) {
-        let errMsg = "Failed to process document.";
+        let errMsg = "Failed to queue document.";
         try { errMsg = (await response.json()).detail || errMsg; } catch {}
-        // Backend already marked as Failed — just propagate the error
         throw new Error(errMsg);
       }
 
-      setProgress(95);
-      setStatusText("Fetching completed analysis...");
-
-      // 5. Fetch the fully-updated tender row (has analysis_result, status=Active, etc.)
-      const { data: completedTender, error: fetchErr } = await supabase
-        .from('tenders')
-        .select('*')
-        .eq('id', newTender.id)
-        .single();
-
-      if (fetchErr) throw fetchErr;
-
+      // 5. Backend returned 202 — processing is happening in background.
+      //    Pass the Processing tender to App.tsx; polling will detect completion.
       setProgress(100);
-      setStatusText("Analysis complete!");
-      
+      setStatusText("Queued! AI is analyzing in background...");
+
       setTimeout(() => {
-        onUploadSuccess(completedTender);
+        onUploadSuccess(newTender);
         resetState();
-      }, 500);
+      }, 600);
 
     } catch (err: any) {
       const msg = err.message || "An error occurred during analysis.";

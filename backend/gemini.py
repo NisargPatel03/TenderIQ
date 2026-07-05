@@ -1,5 +1,6 @@
 import os
 import json
+import requests as http_requests
 import google.generativeai as genai
 from google.generativeai.types import GenerateContentResponse
 
@@ -287,22 +288,36 @@ JSON Structure:
         return chunks
 
     def generate_embeddings(self, chunks: list[str]) -> list[list[float]]:
-        """Calls Google Generative AI to get embeddings for each chunk of text."""
+        """
+        Calls the Google AI v1 REST API directly for embeddings.
+        Bypasses google-generativeai SDK which routes to v1beta (where
+        embedding models are unavailable).
+        Model: text-embedding-004 → 768-dimension vectors.
+        """
         if not chunks:
             return []
+
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        url = "https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent"
+
         embeddings = []
         for chunk in chunks:
             try:
-                response = genai.embed_content(
-                    model="models/embedding-001",
-                    content=chunk,
-                    task_type="retrieval_document"
+                resp = http_requests.post(
+                    url,
+                    params={"key": api_key},
+                    json={
+                        "model": "models/text-embedding-004",
+                        "content": {"parts": [{"text": chunk}]},
+                        "taskType": "RETRIEVAL_DOCUMENT",
+                    },
+                    timeout=30,
                 )
-                # embedding-001 returns a flat list under 'embedding'
-                embeddings.append(list(response['embedding']))
+                resp.raise_for_status()
+                values = resp.json()["embedding"]["values"]
+                embeddings.append(values)
             except Exception as e:
-                print(f"Error generating embedding for chunk: {e}")
-                # Fallback: zero vector so DB insert doesn't fail
+                print(f"Embedding error for chunk (using zero vector): {e}")
                 embeddings.append([0.0] * 768)
         return embeddings
 

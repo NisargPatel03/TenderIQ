@@ -54,6 +54,44 @@ function App() {
     }
   }, [session]);
 
+  // 3. Poll status of 'Processing' tenders every 3s — works because Render
+  //    runs background tasks to completion (no serverless kill).
+  useEffect(() => {
+    const processingTenders = tenders.filter(t => t.status === 'Processing');
+    if (processingTenders.length === 0) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { data: freshList, error } = await supabase
+          .from('tenders')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (error || !freshList) return;
+
+        // Check if any previously-Processing tender just became Active
+        const prevActiveId = activeTenderId;
+        const wasProcessing = tenders.find(t => t.id === prevActiveId && t.status === 'Processing');
+        const nowActive = freshList.find(t => t.id === prevActiveId && t.status === 'Active');
+
+        setTenders(freshList);
+
+        if (wasProcessing && nowActive) {
+          confetti({
+            particleCount: 150,
+            spread: 80,
+            origin: { y: 0.6 },
+            colors: ['#10b981', '#3b82f6', '#ffffff']
+          });
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [tenders, activeTenderId]);
+
   const handleAuthSuccess = () => {
     // Session is updated automatically by listener
   };
@@ -62,35 +100,16 @@ function App() {
     // Optional loader styling trigger
   };
 
-  const handleUploadSuccess = async (completedTender: any) => {
-    // Reload the full list from Supabase so orphaned 'Processing' records
-    // from previous failed attempts don't show as duplicates.
-    try {
-      const { data, error } = await supabase
-        .from('tenders')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (!error && data) {
-        setTenders(data);
-      }
-    } catch {
-      // Fallback: just prepend if the refresh fails
-      setTenders((prev) => {
-        const filtered = prev.filter((t) => t.id !== completedTender.id);
-        return [completedTender, ...filtered];
-      });
-    }
-
-    setActiveTenderId(completedTender.id);
-    setShowUploadForm(false);
-
-    // Fire confetti to celebrate the completed AI audit
-    confetti({
-      particleCount: 150,
-      spread: 80,
-      origin: { y: 0.6 },
-      colors: ['#10b981', '#3b82f6', '#ffffff']
+  const handleUploadSuccess = async (processingTender: any) => {
+    // Backend returned 202 — tender is still Processing.
+    // Add it to the list immediately so the sidebar badge shows.
+    // The polling loop above will detect when it becomes Active and fire confetti.
+    setTenders((prev) => {
+      const filtered = prev.filter(t => t.id !== processingTender.id);
+      return [processingTender, ...filtered];
     });
+    setActiveTenderId(processingTender.id);
+    setShowUploadForm(false);
   };
 
   const handleUploadError = (err: string) => {
