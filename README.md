@@ -84,12 +84,12 @@ Each section returns a **found/not-found indicator** with a green or red dot in 
 
 TenderIQ implements a full **pgvector RAG pipeline** to handle massive 1,000+ page documents:
 
-- **Text Chunking:** Documents are split using a sliding-window algorithm (1,500 char chunks with 300-char overlap) preserving paragraph context
-- **Embeddings:** Each chunk is converted to a 768-dimension vector using Google's `embedding-001` model
-- **Storage:** Vectors stored in Supabase `tender_chunks` table with `pgvector` extension
-- **Semantic Search:** When a user asks a chat question, an embedding is generated for the query and a **cosine similarity search** (`match_tender_chunks` RPC) retrieves the top 5 most relevant paragraphs
-- **3-Layer Context:** QA engine uses `analysis_result` (primary) → RAG chunks (secondary) → raw text fallback (tertiary)
-- **Cost Efficiency:** Reduces Gemini token usage by up to 95% vs. sending full document text
+- **Text Chunking:** Documents are split using a sliding-window algorithm (1,500 char chunks with 300-char overlap) preserving paragraph context.
+- **Embeddings:** Each chunk is converted to a 768-dimension vector using the official Google GenerativeAI SDK and the `models/gemini-embedding-001` model with batching optimization (processing in groups of 100 with a 0.5s rate-limit delay to prevent 429 quota errors).
+- **Storage:** Vectors stored in Supabase `tender_chunks` table with `pgvector` extension.
+- **Semantic Search:** When a user asks a chat question, an embedding is generated for the query and a **cosine similarity search** (`match_tender_chunks` RPC) retrieves the top 5 most relevant paragraphs.
+- **3-Layer Context:** QA engine uses `analysis_result` (primary) → RAG chunks (secondary) → raw text fallback (tertiary).
+- **Cost Efficiency:** Reduces Gemini token usage by up to 95% vs. sending full document text.
 
 ---
 
@@ -215,6 +215,34 @@ A global `NotificationProvider` wraps the application with two notification type
 
 ---
 
+### 14. 🤝 Collaborative Team Workspaces & Roles
+
+Procurement is a team sport. TenderIQ provides a full workspace management interface:
+- **Workspace Switcher:** Easily switch between personal and shared team workspaces.
+- **Auto-Initialization:** New sign-ups are automatically allocated a personal workspace to start immediately.
+- **Role-Based Membership:** Assign invited members specific workspace roles (e.g. *Legal Auditor*, *Technical Reviewer*, *Bid Manager*) that determine their permissions.
+- **Team Management Console:** Owners and Admins can invite teammates by email, view active memberships, and revoke access inside the settings modal.
+
+---
+
+### 15. 💬 Real-Time Clause-Level Comment Threads
+
+Teammates can collaborate directly on specific compliance clauses:
+- **Localized Feeds:** Expanded comment drawer next to every compliance check, criteria list, or required document.
+- **Real-Time Sync:** Subscribed to Supabase realtime channels so comments, edits, and deletions sync instantly across all user screens without page reloads.
+- **Teammate Mentions:** Tag members using `@email_address` format, which highlights their tags in a custom bubble and triggers instant desktop toast notifications.
+
+---
+
+### 16. 📋 Multi-User Kanban Bid Board
+
+Track procurement proposals through a unified team lifecycle:
+- **Visual Lifecycles:** Kanban board displays tenders grouped into 5 stages: *Discovered*, *Under Audit*, *Approved to Bid*, *Writing Proposal*, and *Submitted*.
+- **Drag-and-Drop / Move Buttons:** Easy touch/mouse drag cards or click navigation arrows to transition tenders between stages.
+- **Instant Persistence:** Stage movements persist immediately to database records for all workspace members.
+
+---
+
 ## Architecture
 
 ```
@@ -296,16 +324,18 @@ Run the full `schema.sql` file in your Supabase SQL editor. It creates:
 
 ### `public.tenders`
 ```sql
-id            UUID PRIMARY KEY
-user_id       UUID → auth.users
-name          TEXT
-status        TEXT CHECK IN ('Active','Submitted','Expired','Processing','Failed')
-deadline      TIMESTAMP WITH TIME ZONE
-file_size     BIGINT
-page_count    INT
-extracted_text TEXT          -- First 100K chars of document
+id              UUID PRIMARY KEY
+user_id         UUID → auth.users
+org_id          UUID → public.organizations (nullable)
+name            TEXT
+status          TEXT CHECK IN ('Active','Submitted','Expired','Processing','Failed')
+kanban_stage    TEXT DEFAULT 'Discovered' CHECK IN ('Discovered','Under Audit','Approved to Bid','Writing Proposal','Submitted')
+deadline        TIMESTAMP WITH TIME ZONE
+file_size       BIGINT
+page_count      INT
+extracted_text  TEXT          -- First 100K chars of document
 analysis_result JSONB        -- Full 9-section AI extraction
-created_at    TIMESTAMP
+created_at      TIMESTAMP
 ```
 
 ### `public.tender_qa`
@@ -324,22 +354,55 @@ id            UUID PRIMARY KEY
 tender_id     UUID → tenders (ON DELETE CASCADE)
 chunk_content TEXT
 page_number   INT
-embedding     vector(768)   -- Google embedding-001 dimensions
+embedding     vector(768)   -- Google gemini-embedding-001 dimensions
 created_at    TIMESTAMP
 ```
 
-### `match_tender_chunks` RPC Function
-PostgreSQL function performing cosine similarity search:
+### `public.organizations`
 ```sql
-match_tender_chunks(
-  query_embedding  vector(768),
-  match_threshold  float,        -- minimum similarity (0.25 default)
-  match_count      int,          -- top N results (5 default)
-  filter_tender_id uuid
-) RETURNS TABLE(id, tender_id, chunk_content, page_number, similarity)
+id          UUID PRIMARY KEY
+name        TEXT
+owner_id    UUID → auth.users
+created_at  TIMESTAMP
 ```
 
-All tables have **Row-Level Security (RLS)** enforced — users can only access their own data.
+### `public.org_members`
+```sql
+id          UUID PRIMARY KEY
+org_id      UUID → public.organizations
+user_id     UUID → auth.users
+user_email  TEXT
+role        TEXT CHECK IN ('Owner', 'Admin', 'Legal Auditor', 'Technical Reviewer', 'Bid Manager')
+created_at  TIMESTAMP
+```
+
+### `public.clause_comments`
+```sql
+id            UUID PRIMARY KEY
+tender_id     UUID → tenders
+section_key   TEXT
+clause_text   TEXT
+user_id       UUID → auth.users
+user_email    TEXT
+comment_text  TEXT
+created_at    TIMESTAMP
+```
+
+### PostgreSQL Helper & Security Definer Functions
+- **`match_tender_chunks`**: Cosine similarity matching:
+  ```sql
+  match_tender_chunks(
+    query_embedding  vector(768),
+    match_threshold  float,        -- minimum similarity (0.25 default)
+    match_count      int,          -- top N results (5 default)
+    filter_tender_id uuid
+  ) RETURNS TABLE(id, chunk_content, page_number, similarity)
+  ```
+- **`is_org_member(org_id, user_uuid)`**: Checks if user is a member/owner of the organization without causing RLS recursion.
+- **`is_org_admin(org_id, user_uuid)`**: Checks if user has owner/admin privileges in the organization.
+- **`get_user_id_by_email(email_addr)`**: Returns user UUID for a registered email (used for organization invites).
+
+All tables have **Row-Level Security (RLS)** policies enabled, scoped per-user and per-organization to enforce strict multi-tenancy isolation.
 
 ---
 
@@ -578,7 +641,7 @@ The following features represent planned future enhancements:
 - Compare EMD securities, turnover requirements, submission deadlines, and scope size in a tabular layout
 - Export comparison matrices as CSV or PDF
 
-### 3. 🤝 Bid Team Collaboration Workspace
+### 3. 🤝 Bid Team Collaboration Workspace (Completed ✅)
 - Shared comment thread on each tender for team review and discussion
 - Multi-user assignment workflow: mark bids as "Under Legal Review", "Technical Review", or "Approved to Bid"
 - Role-based access control (Admin, Reviewer, Viewer)
