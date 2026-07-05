@@ -9,6 +9,17 @@ import { GoNoGoScorecard } from './GoNoGoScorecard.tsx';
 import { useNotification } from './NotificationProvider';
 import { ClauseComments } from './ClauseComments.tsx';
 
+const renderFormattedText = (text: string) => {
+  if (!text) return '';
+  const parts = text.split('**');
+  return parts.map((part, index) => {
+    if (index % 2 === 1) {
+      return <strong key={index}>{part}</strong>;
+    }
+    return part;
+  });
+};
+
 interface TenderDetailProps {
   tender: {
     id: string;
@@ -502,7 +513,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                                       gap: '4px'
                                     }} className="clause-item">
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                                        <span style={{ fontSize: '13px', lineHeight: '1.5', flex: 1 }}>{bullet}</span>
+                                        <span style={{ fontSize: '13px', lineHeight: '1.5', flex: 1 }}>{renderFormattedText(bullet)}</span>
                                         <button 
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -636,7 +647,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                         {bullets.length > 0 ? (
                           <ul>
                             {bullets.map((bullet: string, idx: number) => (
-                              <li key={idx}>{bullet}</li>
+                              <li key={idx}>{renderFormattedText(bullet)}</li>
                             ))}
                           </ul>
                         ) : (
