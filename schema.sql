@@ -174,10 +174,6 @@ BEGIN
         SELECT 1 FROM public.org_members
         WHERE org_members.org_id = $1
           AND org_members.user_id = $2
-    ) OR EXISTS (
-        SELECT 1 FROM public.organizations
-        WHERE organizations.id = $1
-          AND organizations.owner_id = $2
     );
 END;
 $$;
@@ -195,10 +191,6 @@ BEGIN
         WHERE org_members.org_id = $1
           AND org_members.user_id = $2
           AND org_members.role IN ('Owner', 'Admin')
-    ) OR EXISTS (
-        SELECT 1 FROM public.organizations
-        WHERE organizations.id = $1
-          AND organizations.owner_id = $2
     );
 END;
 $$;
