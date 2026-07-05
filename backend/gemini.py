@@ -291,22 +291,33 @@ JSON Structure:
         """
         Generates 768-dimension embeddings for the given text chunks using
         the official Google GenerativeAI SDK and the gemini-embedding-001 model.
+        Batches requests to prevent 429 Quota Exceeded errors.
         """
         if not chunks:
             return []
 
+        import time
+
+        batch_size = 100
         embeddings = []
-        for chunk in chunks:
+
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
             try:
                 res = genai.embed_content(
                     model="models/gemini-embedding-001",
-                    content=chunk,
+                    content=batch,
                     task_type="retrieval_document",
                     output_dimensionality=768
                 )
-                embeddings.append(res['embedding'])
+                embeddings.extend(res['embedding'])
             except Exception as e:
-                print(f"Embedding error for chunk (using zero vector): {e}")
-                embeddings.append([0.0] * 768)
+                print(f"Embedding error for batch starting at {i}: {e}")
+                embeddings.extend([[0.0] * 768] * len(batch))
+            
+            # Sleep 0.5s between batches to stay well within free tier rate limits
+            if i + batch_size < len(chunks):
+                time.sleep(0.5)
+
         return embeddings
 
