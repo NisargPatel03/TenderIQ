@@ -39,6 +39,14 @@ export const ProposalWriter: React.FC<ProposalWriterProps> = ({
   const [generationStep, setGenerationStep] = useState(0);
   const [proposalDraft, setProposalDraft] = useState<any | null>(null);
   const [activePreviewTab, setActivePreviewTab] = useState<'cover' | 'tech' | 'matrix'>('cover');
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
 
   const steps = [
     "Compiling active workspace references...",
@@ -237,7 +245,7 @@ export const ProposalWriter: React.FC<ProposalWriterProps> = ({
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '24px', minHeight: '500px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.5fr', gap: '24px', minHeight: '500px' }}>
       
       {/* LEFT COLUMN: Reference Library & Config */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -503,7 +511,7 @@ export const ProposalWriter: React.FC<ProposalWriterProps> = ({
             </div>
 
             {/* TAB SELECTOR */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => setActivePreviewTab('cover')}
                 style={{
