@@ -298,7 +298,7 @@ JSON Structure:
             return []
 
         api_key = os.environ.get("GEMINI_API_KEY", "")
-        url = "https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent"
+        url = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent"
 
         embeddings = []
         for chunk in chunks:
