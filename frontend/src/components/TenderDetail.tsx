@@ -78,14 +78,16 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
           filter: `tender_id=eq.${tender.id}`,
         },
         (payload) => {
+          console.log("Global comments realtime payload:", payload);
           const newRecord = payload.new as any;
-          // Avoid triggering toast on the user's own comments
-          if (newRecord.user_id !== userId && newRecord.comment_text.includes(`@${userEmail}`)) {
+          if (newRecord.comment_text.includes(`@${userEmail}`)) {
             showToast(`New mention from ${newRecord.user_email}!`, 'info');
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log(`Global comments subscription status: ${status}`);
+      });
 
     return () => {
       supabase.removeChannel(channel);
