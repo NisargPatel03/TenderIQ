@@ -9,6 +9,7 @@ import { GoNoGoScorecard } from './GoNoGoScorecard.tsx';
 import { useNotification } from './NotificationProvider';
 import { ClauseComments } from './ClauseComments.tsx';
 import { ProposalWriter } from './ProposalWriter.tsx';
+import { supabase } from '../utils/supabase';
 
 
 const renderFormattedText = (text: string) => {
@@ -61,6 +62,35 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
     setSearchTerm('');
     setActiveCommentIdx(null);
   }, [selectedSectionKey]);
+
+  useEffect(() => {
+    if (!tender.id || !userEmail) return;
+
+    // Subscribe globally to all clause_comments on this tender
+    const channel = supabase
+      .channel(`global_comments_${tender.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'clause_comments',
+          filter: `tender_id=eq.${tender.id}`,
+        },
+        (payload) => {
+          const newRecord = payload.new as any;
+          // Avoid triggering toast on the user's own comments
+          if (newRecord.user_id !== userId && newRecord.comment_text.includes(`@${userEmail}`)) {
+            showToast(`New mention from ${newRecord.user_email}!`, 'info');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tender.id, userEmail, userId]);
 
   const sections = tender.analysis_result || {};
 

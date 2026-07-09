@@ -56,11 +56,6 @@ export const ClauseComments: React.FC<ClauseCommentsProps> = ({
                 if (prev.some((c) => c.id === newRecord.id)) return prev;
                 return [...prev, newRecord];
               });
-              
-              // Trigger mention alert
-              if (newRecord.comment_text.includes(`@${userEmail}`)) {
-                showToast(`New mention from ${newRecord.user_email}!`, 'info');
-              }
             }
           } else if (payload.eventType === 'DELETE') {
             setComments((prev) => prev.filter((c) => c.id !== payload.old.id));
