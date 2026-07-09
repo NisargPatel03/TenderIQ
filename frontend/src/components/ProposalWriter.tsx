@@ -101,6 +101,78 @@ export const ProposalWriter: React.FC<ProposalWriterProps> = ({
     }
   };
 
+  const renderProposalText = (text: string) => {
+    if (!text) return null;
+    const lines = text.split('\n');
+    
+    return lines.map((line, idx) => {
+      const trimmed = line.trim();
+      
+      if (!trimmed) {
+        return <div key={idx} style={{ height: '12px' }} />;
+      }
+      
+      const formatLineBoldContent = (content: string) => {
+        const parts = content.split('**');
+        return parts.map((part, index) => {
+          if (index % 2 === 1) {
+            return <strong key={index} style={{ color: '#ffffff', fontWeight: '700' }}>{part}</strong>;
+          }
+          return part;
+        });
+      };
+      
+      if (trimmed.startsWith('## ')) {
+        return (
+          <h2 key={idx} style={{ 
+            fontSize: '15px', 
+            fontWeight: '700', 
+            color: 'var(--primary)', 
+            marginTop: '16px', 
+            marginBottom: '8px' 
+          }}>
+            {formatLineBoldContent(trimmed.substring(3))}
+          </h2>
+        );
+      }
+      
+      if (trimmed.startsWith('### ')) {
+        return (
+          <h3 key={idx} style={{ 
+            fontSize: '13px', 
+            fontWeight: '700', 
+            color: 'var(--secondary)', 
+            marginTop: '14px', 
+            marginBottom: '6px' 
+          }}>
+            {formatLineBoldContent(trimmed.substring(4))}
+          </h3>
+        );
+      }
+      
+      if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        return (
+          <div key={idx} style={{ 
+            display: 'flex', 
+            gap: '8px', 
+            paddingLeft: '12px', 
+            marginBottom: '4px',
+            alignItems: 'flex-start'
+          }}>
+            <span style={{ color: 'var(--primary)' }}>•</span>
+            <span style={{ flex: 1 }}>{formatLineBoldContent(trimmed.substring(2))}</span>
+          </div>
+        );
+      }
+      
+      return (
+        <p key={idx} style={{ margin: '0 0 8px 0' }}>
+          {formatLineBoldContent(line)}
+        </p>
+      );
+    });
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !orgId) return;
@@ -565,23 +637,23 @@ export const ProposalWriter: React.FC<ProposalWriterProps> = ({
               backgroundColor: 'var(--bg-primary)',
               border: '1px solid var(--border-light)',
               borderRadius: '8px',
-              padding: '16px',
+              padding: '20px',
               overflowY: 'auto',
               maxHeight: '340px',
-              fontSize: '12px',
+              fontSize: '13px',
               lineHeight: '1.6',
               color: 'var(--text-secondary)',
-              fontFamily: 'monospace'
+              fontFamily: 'inherit'
             }}>
               {activePreviewTab === 'cover' && (
-                <div style={{ whiteSpace: 'pre-wrap' }}>
-                  {proposalDraft.cover_letter}
+                <div>
+                  {renderProposalText(proposalDraft.cover_letter)}
                 </div>
               )}
 
               {activePreviewTab === 'tech' && (
-                <div style={{ whiteSpace: 'pre-wrap' }}>
-                  {proposalDraft.technical_response}
+                <div>
+                  {renderProposalText(proposalDraft.technical_response)}
                 </div>
               )}
 
