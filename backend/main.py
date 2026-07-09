@@ -408,6 +408,20 @@ def create_docx_file(tender_name: str, draft: dict) -> io.BytesIO:
     from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+    def add_runs(paragraph, text, font_name="Arial", font_size_pt=11, color_rgb=None, bold=False, italic=False):
+        """Helper to parse **bold** text and add formatted runs to a paragraph."""
+        parts = text.split("**")
+        for i, part in enumerate(parts):
+            if not part:
+                continue
+            run = paragraph.add_run(part)
+            run.font.name = font_name
+            run.font.size = Pt(font_size_pt)
+            if color_rgb:
+                run.font.color.rgb = color_rgb
+            run.font.bold = bold or (i % 2 == 1)
+            run.font.italic = italic
+
     doc = Document()
     
     # 1. Title Page / Cover Page
@@ -416,58 +430,37 @@ def create_docx_file(tender_name: str, draft: dict) -> io.BytesIO:
         
     title_p = doc.add_paragraph()
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_run = title_p.add_run("BID PROPOSAL RESPONSE")
-    title_run.font.name = "Arial"
-    title_run.font.size = Pt(28)
-    title_run.font.bold = True
-    title_run.font.color.rgb = RGBColor(30, 58, 138)  # Deep Navy Blue
+    add_runs(title_p, "BID PROPOSAL RESPONSE", font_size_pt=28, color_rgb=RGBColor(30, 58, 138), bold=True)
     
     sub_p = doc.add_paragraph()
     sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    sub_run = sub_p.add_run(f"Project/Tender: {tender_name}")
-    sub_run.font.name = "Arial"
-    sub_run.font.size = Pt(14)
-    sub_run.font.italic = True
-    sub_run.font.color.rgb = RGBColor(100, 116, 139)  # Slate Gray
+    add_runs(sub_p, f"Project/Tender: {tender_name}", font_size_pt=14, color_rgb=RGBColor(100, 116, 139), italic=True)
     
     for _ in range(4):
         doc.add_paragraph()
         
     meta_p = doc.add_paragraph()
     meta_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    meta_run = meta_p.add_run("Prepared by: Bidding Team\nGenerated via TenderIQ Proposal Engine")
-    meta_run.font.name = "Arial"
-    meta_run.font.size = Pt(11)
-    meta_run.font.color.rgb = RGBColor(71, 85, 105)
+    add_runs(meta_p, "Prepared by: Bidding Team\nGenerated via TenderIQ Proposal Engine", color_rgb=RGBColor(71, 85, 105))
     
     doc.add_page_break()
     
     # 2. Executive Cover Letter
     h1 = doc.add_paragraph()
-    h1_run = h1.add_run("SECTION 1: Executive Cover Letter")
-    h1_run.font.name = "Arial"
-    h1_run.font.size = Pt(18)
-    h1_run.font.bold = True
-    h1_run.font.color.rgb = RGBColor(30, 58, 138)
+    add_runs(h1, "SECTION 1: Executive Cover Letter", font_size_pt=18, color_rgb=RGBColor(30, 58, 138), bold=True)
     
     cover_text = draft.get("cover_letter", "")
     for para in cover_text.split("\n\n"):
         if para.strip():
             p = doc.add_paragraph()
-            p_run = p.add_run(para.strip())
-            p_run.font.name = "Arial"
-            p_run.font.size = Pt(11)
+            add_runs(p, para.strip())
             p.paragraph_format.line_spacing = 1.15
             
     doc.add_page_break()
     
     # 3. Technical Response Section
     h2 = doc.add_paragraph()
-    h2_run = h2.add_run("SECTION 2: Technical Response & Statement of Work")
-    h2_run.font.name = "Arial"
-    h2_run.font.size = Pt(18)
-    h2_run.font.bold = True
-    h2_run.font.color.rgb = RGBColor(30, 58, 138)
+    add_runs(h2, "SECTION 2: Technical Response & Statement of Work", font_size_pt=18, color_rgb=RGBColor(30, 58, 138), bold=True)
     
     tech_text = draft.get("technical_response", "")
     for para in tech_text.split("\n\n"):
@@ -476,77 +469,46 @@ def create_docx_file(tender_name: str, draft: dict) -> io.BytesIO:
             continue
         if para_strip.startswith("### "):
             p = doc.add_paragraph()
-            p_run = p.add_run(para_strip[4:])
-            p_run.font.name = "Arial"
-            p_run.font.size = Pt(13)
-            p_run.font.bold = True
-            p_run.font.color.rgb = RGBColor(15, 118, 110)
+            add_runs(p, para_strip[4:], font_size_pt=13, color_rgb=RGBColor(15, 118, 110), bold=True)
         elif para_strip.startswith("## "):
             p = doc.add_paragraph()
-            p_run = p.add_run(para_strip[3:])
-            p_run.font.name = "Arial"
-            p_run.font.size = Pt(15)
-            p_run.font.bold = True
-            p_run.font.color.rgb = RGBColor(30, 58, 138)
+            add_runs(p, para_strip[3:], font_size_pt=15, color_rgb=RGBColor(30, 58, 138), bold=True)
         else:
-            p = doc.add_paragraph()
             lines = para_strip.split("\n")
             if len(lines) > 1 and all(l.strip().startswith("-") or l.strip().startswith("*") for l in lines if l.strip()):
                 for line in lines:
                     if line.strip():
                         clean_line = line.strip()[1:].strip()
                         bp = doc.add_paragraph(style='List Bullet')
-                        bp_run = bp.add_run(clean_line)
-                        bp_run.font.name = "Arial"
-                        bp_run.font.size = Pt(11)
+                        add_runs(bp, clean_line)
             else:
-                p_run = p.add_run(para_strip)
-                p_run.font.name = "Arial"
-                p_run.font.size = Pt(11)
+                p = doc.add_paragraph()
+                add_runs(p, para_strip)
                 p.paragraph_format.line_spacing = 1.15
                 
     doc.add_page_break()
     
     # 4. Capability Compliance Matrix
     h3 = doc.add_paragraph()
-    h3_run = h3.add_run("SECTION 3: Capability Compliance Matrix")
-    h3_run.font.name = "Arial"
-    h3_run.font.size = Pt(18)
-    h3_run.font.bold = True
-    h3_run.font.color.rgb = RGBColor(30, 58, 138)
+    add_runs(h3, "SECTION 3: Capability Compliance Matrix", font_size_pt=18, color_rgb=RGBColor(30, 58, 138), bold=True)
     
     matrix = draft.get("capability_matrix", [])
     if matrix:
         table = doc.add_table(rows=1, cols=3)
         table.style = 'Light Shading Accent 1'
         hdr_cells = table.rows[0].cells
-        hdr_cells[0].text = 'Tender Requirement'
-        hdr_cells[1].text = 'Compliance Status'
-        hdr_cells[2].text = 'Evidence / Reference'
+        add_runs(hdr_cells[0].paragraphs[0], 'Tender Requirement', font_size_pt=10.5, bold=True)
+        add_runs(hdr_cells[1].paragraphs[0], 'Compliance Status', font_size_pt=10.5, bold=True)
+        add_runs(hdr_cells[2].paragraphs[0], 'Evidence / Reference', font_size_pt=10.5, bold=True)
         
-        for cell in hdr_cells:
-            for paragraph in cell.paragraphs:
-                for run in paragraph.runs:
-                    run.font.name = "Arial"
-                    run.font.bold = True
-                    run.font.size = Pt(10.5)
-                    
         for item in matrix:
             row_cells = table.add_row().cells
-            row_cells[0].text = item.get("requirement", "N/A")
-            row_cells[1].text = item.get("compliance_status", "Compliant")
-            row_cells[2].text = item.get("evidence_reference", "N/A")
-            
-            for cell in row_cells:
-                for paragraph in cell.paragraphs:
-                    for run in paragraph.runs:
-                        run.font.name = "Arial"
-                        run.font.size = Pt(10)
+            add_runs(row_cells[0].paragraphs[0], item.get("requirement", "N/A"), font_size_pt=10)
+            add_runs(row_cells[1].paragraphs[0], item.get("compliance_status", "Compliant"), font_size_pt=10)
+            add_runs(row_cells[2].paragraphs[0], item.get("evidence_reference", "N/A"), font_size_pt=10)
     else:
         p = doc.add_paragraph()
-        p_run = p.add_run("No compliance requirements mapped.")
-        p_run.font.name = "Arial"
-        p_run.font.italic = True
+        add_runs(p, "No compliance requirements mapped.", italic=True)
         
     file_stream = io.BytesIO()
     doc.save(file_stream)
