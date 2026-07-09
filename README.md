@@ -179,10 +179,11 @@ The home screen (before selecting a tender) shows live workspace metrics:
 
 ### 10. 🔔 Notification System
 
-A global `NotificationProvider` wraps the application with two notification types:
+A global `NotificationProvider` wraps the application with robust notification channels:
 
-- **Toast notifications:** Transient success/error/info messages that auto-dismiss
-- **Confirm dialogs:** Modal confirmation prompts for destructive actions (delete, sign out) with `isDanger` red styling option
+- **Toast notifications:** Transient success/error/info messages that auto-dismiss.
+- **Confirm dialogs:** Modal confirmation prompts for destructive actions (delete, sign out) with `isDanger` red styling option.
+- **Real-Time Mention Tagging and Badges:** Tracks comments referencing the current user across the entire workspace in real-time. Highlights tagged sections with counter badges in the sidebar, adds pulsing gold notification dots to tagged clause comment triggers, and fires toast alerts even if the comment drawer is closed. Automatically updates counts and clears badges upon opening the drawer.
 
 ---
 
@@ -202,6 +203,7 @@ A global `NotificationProvider` wraps the application with two notification type
 - **Sidebar drawer:** Slides in from left on mobile with a full-screen backdrop overlay
 - **Auto-close:** Drawer closes automatically on tender selection or "Analyze New Tender" click
 - **Breakpoint:** Responsive layout switches at `768px` viewport width
+- **Horizontal Tab Slide:** Horizontal layout tabs (Analysis, Timeline, Scorecard, Proposal Writer) scroll smoothly with a hidden scrollbar on mobile viewports, avoiding text overflow and layout breaks.
 
 ---
 
@@ -711,7 +713,7 @@ Every `git push` to the `main` branch triggers automatic rebuilds on both Vercel
 
 ## Roadmap
 
-The following features represent planned future enhancements:
+The following features represent planned future enhancements and accomplishments:
 
 ### 1. 🔭 Scanned Document OCR Support
 - Integration with PyTesseract, EasyOCR, or Google Cloud Vision API to handle image-only (scanned) PDFs
@@ -727,18 +729,26 @@ The following features represent planned future enhancements:
 - Multi-user assignment workflow: mark bids as "Under Legal Review", "Technical Review", or "Approved to Bid"
 - Role-based access control (Admin, Reviewer, Viewer)
 
-### 4. 🔔 Deadline Notification Alerts
+### 4. 🔔 Deadline Notification Webhook Alerts
 - Email notifications or Slack/Discord webhook alerts when critical milestones approach (e.g., pre-bid meeting in 48 hours)
 - Configurable reminder intervals per tender
 
-### 5. ✍️ AI Bid Writing Assistant
-- Draft cover letters, capability statements, and compliance matrices from the extracted scope and eligibility requirements
-- Output pre-formatted Word documents tailored to the specific tender
+### 5. ✍️ AI Bid Writing Assistant (Completed ✅)
+- Auto-draft Cover Letters, Technical Responses, and Compliance Matrices.
+- Custom instructions capability, stepped compiler animations, live rich-text previewer, and formatted DOCX export.
 
 ### 6. 📈 Analytics Dashboard
 - Historical bid win/loss tracking
 - Industry-wise tender category distribution
 - Average time from upload to submission tracking
+
+### 7. 🔔 Real-Time Tagging & Notification Badges (Completed ✅)
+- Multi-user `@mention` tracking synced with Supabase Realtime client.
+- Glowing section counter badges, pulsing dot indicators on clause-level drawers, and automatic read/dismiss counters.
+
+### 8. 📋 Kanban Bid Lifecycle Board (Completed ✅)
+- Multi-user Kanban Board tracking tenders across stages from Discovered to Submitted.
+- Drag-and-drop workflow status updates, synced in real-time.
 
 ---
 
