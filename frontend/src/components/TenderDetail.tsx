@@ -63,6 +63,29 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
     setActiveCommentIdx(null);
   }, [selectedSectionKey]);
 
+  const [userMentions, setUserMentions] = useState<{ id: string; section_key: string; clause_text: string }[]>([]);
+
+  // Fetch initial user mentions on load
+  useEffect(() => {
+    const fetchUserMentions = async () => {
+      if (!tender.id || !userEmail) return;
+      try {
+        const { data, error } = await supabase
+          .from('clause_comments')
+          .select('id, section_key, clause_text')
+          .eq('tender_id', tender.id)
+          .like('comment_text', `%@${userEmail}%`);
+        if (!error && data) {
+          setUserMentions(data);
+        }
+      } catch (err) {
+        console.error('Error fetching user mentions:', err);
+      }
+    };
+
+    fetchUserMentions();
+  }, [tender.id, userEmail]);
+
   useEffect(() => {
     if (!tender.id || !userEmail) return;
 
@@ -72,16 +95,30 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*', // Listen to both INSERT and DELETE
           schema: 'public',
           table: 'clause_comments',
           filter: `tender_id=eq.${tender.id}`,
         },
         (payload) => {
-          console.log("Global comments realtime payload:", payload);
-          const newRecord = payload.new as any;
-          if (newRecord.comment_text.includes(`@${userEmail}`)) {
-            showToast(`New mention from ${newRecord.user_email}!`, 'info');
+          if (payload.eventType === 'INSERT') {
+            console.log("Global comments realtime insert payload:", payload);
+            const newRecord = payload.new as any;
+            if (newRecord.comment_text.includes(`@${userEmail}`)) {
+              setUserMentions(prev => {
+                if (prev.some(m => m.id === newRecord.id)) return prev;
+                return [...prev, {
+                  id: newRecord.id,
+                  section_key: newRecord.section_key,
+                  clause_text: newRecord.clause_text
+                }];
+              });
+              showToast(`New mention from ${newRecord.user_email}!`, 'info');
+            }
+          } else if (payload.eventType === 'DELETE') {
+            console.log("Global comments realtime delete payload:", payload);
+            const oldRecord = payload.old as any;
+            setUserMentions(prev => prev.filter(m => m.id !== oldRecord.id));
           }
         }
       )
@@ -425,6 +462,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                 const Icon = config.icon;
                 const data = sections[key];
                 const found = data !== undefined && data !== null && data.found !== false;
+                const sectionMentionCount = userMentions.filter(m => m.section_key === key).length;
                 
                 return (
                   <button
@@ -432,11 +470,25 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                     className={`analysis-nav-item ${selectedSectionKey === key ? 'active' : ''} ${!found ? 'not-found' : ''}`}
                     onClick={() => setSelectedSectionKey(key)}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden', flex: 1 }}>
                       <Icon size={16} className="nav-icon" style={{ flexShrink: 0 }} />
                       <span className="nav-text" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {config.title}
                       </span>
+                      {sectionMentionCount > 0 && (
+                        <span style={{
+                          backgroundColor: 'var(--accent-gold)',
+                          color: '#ffffff',
+                          fontSize: '10px',
+                          fontWeight: '700',
+                          padding: '1px 6px',
+                          borderRadius: '10px',
+                          flexShrink: 0,
+                          lineHeight: '1.2'
+                        }}>
+                          {sectionMentionCount}
+                        </span>
+                      )}
                     </div>
                     <span className={`status-dot ${found ? 'found' : 'missing'}`}></span>
                   </button>
@@ -557,27 +609,57 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                                     }} className="clause-item">
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
                                         <span style={{ fontSize: '13px', lineHeight: '1.5', flex: 1 }}>{renderFormattedText(bullet)}</span>
-                                        <button 
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setActiveCommentIdx(activeCommentIdx === idx ? null : idx);
-                                          }}
-                                          style={{
-                                            background: 'transparent',
-                                            border: 'none',
-                                            color: activeCommentIdx === idx ? 'var(--primary)' : 'var(--text-muted)',
-                                            cursor: 'pointer',
-                                            padding: '4px',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            borderRadius: '4px',
-                                            transition: 'all 0.2s'
-                                          }}
-                                          className="comment-toggle-btn"
-                                          title="Comment on this clause"
-                                        >
-                                          <MessageSquare size={14} />
-                                        </button>
+                                        {(() => {
+                                          const hasClauseMention = userMentions.some(
+                                            m => m.section_key === selectedSectionKey && m.clause_text === bullet
+                                          );
+                                          return (
+                                            <button 
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                const isOpening = activeCommentIdx !== idx;
+                                                setActiveCommentIdx(isOpening ? idx : null);
+                                                if (isOpening) {
+                                                  setUserMentions(prev => prev.filter(
+                                                    m => !(m.section_key === selectedSectionKey && m.clause_text === bullet)
+                                                  ));
+                                                }
+                                              }}
+                                              style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: activeCommentIdx === idx 
+                                                  ? 'var(--primary)' 
+                                                  : hasClauseMention 
+                                                    ? 'var(--accent-gold)' 
+                                                    : 'var(--text-muted)',
+                                                cursor: 'pointer',
+                                                padding: '4px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                position: 'relative',
+                                                borderRadius: '4px',
+                                                transition: 'all 0.2s'
+                                              }}
+                                              className="comment-toggle-btn"
+                                              title={hasClauseMention ? "You are tagged in a comment here!" : "Comment on this clause"}
+                                            >
+                                              <MessageSquare size={14} />
+                                              {hasClauseMention && (
+                                                <div style={{
+                                                  position: 'absolute',
+                                                  top: '0px',
+                                                  right: '0px',
+                                                  width: '6px',
+                                                  height: '6px',
+                                                  borderRadius: '50%',
+                                                  backgroundColor: 'var(--accent-gold)',
+                                                  boxShadow: '0 0 4px var(--accent-gold)'
+                                                }} />
+                                              )}
+                                            </button>
+                                          );
+                                        })()}
                                       </div>
                                       
                                       {activeCommentIdx === idx && (
