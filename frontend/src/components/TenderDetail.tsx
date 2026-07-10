@@ -60,12 +60,13 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
 
   // Audio briefing states
   const [audioLoading, setAudioLoading] = useState(false);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioDuration, setAudioDuration] = useState(0);
   const [audioProgress, setAudioProgress] = useState(0);
   const [audioCreated, setAudioCreated] = useState(false);
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  const audioUrlRef = React.useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -74,7 +75,10 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
         audioRef.current.src = '';
         audioRef.current = null;
       }
-      setAudioUrl(null);
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+        audioUrlRef.current = null;
+      }
       setAudioPlaying(false);
       setAudioProgress(0);
       setAudioDuration(0);
@@ -130,7 +134,7 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      setAudioUrl(url);
+      audioUrlRef.current = url;
 
       const audio = new Audio(url);
       audioRef.current = audio;
@@ -978,6 +982,10 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
                   audioRef.current.pause();
                   audioRef.current.src = '';
                   audioRef.current = null;
+                }
+                if (audioUrlRef.current) {
+                  URL.revokeObjectURL(audioUrlRef.current);
+                  audioUrlRef.current = null;
                 }
                 setAudioCreated(false);
                 setAudioPlaying(false);
