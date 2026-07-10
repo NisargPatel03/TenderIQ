@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   FileText, Calendar, ShieldCheck, Briefcase, DollarSign, 
   Files, ShieldAlert, Award, PhoneCall, Copy, Check, FileDown, 
-  Trash2, Clock, MessageSquare
+  Trash2, Clock, MessageSquare, Volume2, Play, Pause, X
 } from 'lucide-react';
 import { TimelineVisualizer } from './TimelineVisualizer.tsx';
 import { GoNoGoScorecard } from './GoNoGoScorecard.tsx';
@@ -57,6 +57,107 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
   const [selectedSectionKey, setSelectedSectionKey] = useState<string>('executive_summary');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeCommentIdx, setActiveCommentIdx] = useState<number | null>(null);
+
+  // Audio briefing states
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [audioProgress, setAudioProgress] = useState(0);
+  const [audioCreated, setAudioCreated] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = '';
+        audioRef.current = null;
+      }
+      setAudioUrl(null);
+      setAudioPlaying(false);
+      setAudioProgress(0);
+      setAudioDuration(0);
+      setAudioCreated(false);
+    };
+  }, [tender.id]);
+
+  const formatTime = (time: number) => {
+    if (isNaN(time)) return '0:00';
+    const minutes = Math.floor(time / 60);
+    const seconds = Math.floor(time % 60);
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  };
+
+  const handleSeekAudio = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const time = parseFloat(e.target.value);
+    setAudioProgress(time);
+    if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
+  };
+
+  const handlePlayAudioBriefing = async () => {
+    if (audioRef.current) {
+      if (audioPlaying) {
+        audioRef.current.pause();
+        setAudioPlaying(false);
+      } else {
+        audioRef.current.play().catch(err => console.error("Audio play error:", err));
+        setAudioPlaying(true);
+      }
+      return;
+    }
+
+    setAudioLoading(true);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${apiUrl}/api/tenders/audio-brief`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({ tender_id: tender.id }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to generate audio briefing.");
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      setAudioUrl(url);
+
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      setAudioCreated(true);
+
+      audio.addEventListener('loadedmetadata', () => {
+        setAudioDuration(audio.duration);
+      });
+
+      audio.addEventListener('timeupdate', () => {
+        setAudioProgress(audio.currentTime);
+      });
+
+      audio.addEventListener('ended', () => {
+        setAudioPlaying(false);
+        setAudioProgress(0);
+      });
+
+      audio.play().catch(err => console.error("Audio play error:", err));
+      setAudioPlaying(true);
+      showToast("Audio briefing generated successfully!", "success");
+    } catch (err: any) {
+      showToast(err.message || "Failed to load audio briefing.", "error");
+    } finally {
+      setAudioLoading(false);
+    }
+  };
 
   useEffect(() => {
     setSearchTerm('');
@@ -407,6 +508,35 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
               )}
             </div>
           )}
+
+          <button 
+            className="btn" 
+            onClick={handlePlayAudioBriefing}
+            disabled={audioLoading}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              border: '1px solid rgba(16, 185, 129, 0.4)',
+              background: 'rgba(16, 185, 129, 0.1)',
+              color: 'var(--primary)',
+              cursor: 'pointer'
+            }}
+          >
+            {audioLoading ? (
+              <span className="animate-spin" style={{ 
+                display: 'inline-block', 
+                width: '12px', 
+                height: '12px', 
+                border: '2px solid var(--primary)', 
+                borderTopColor: 'transparent', 
+                borderRadius: '50%' 
+              }}></span>
+            ) : (
+              <Volume2 size={14} />
+            )}
+            {audioLoading ? 'Generating...' : audioCreated ? (audioPlaying ? 'Pause Audio' : 'Resume Audio') : 'Listen to Briefing'}
+          </button>
 
           <button className="btn" onClick={handleCopyAll}>
             <Copy size={14} /> Copy All
@@ -800,7 +930,155 @@ export const TenderDetail: React.FC<TenderDetailProps> = ({
         <ProposalWriter tenderId={tender.id} tenderName={tender.name} orgId={orgId} />
       )}
 
+      {/* Floating Glassmorphic Podcast Player */}
+      {audioCreated && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          width: '360px',
+          background: 'rgba(21, 23, 27, 0.9)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: '16px',
+          padding: '16px',
+          boxShadow: '0 12px 40px rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px',
+          zIndex: 1000,
+          animation: 'slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }} className="non-printable">
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{
+                width: '34px',
+                height: '34px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(16, 185, 129, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--primary)',
+                flexShrink: 0
+              }}>
+                <Volume2 size={16} className={audioPlaying ? 'animate-pulse' : ''} />
+              </div>
+              <div style={{ overflow: 'hidden' }}>
+                <h4 style={{ margin: 0, fontSize: '12.5px', color: '#ffffff', fontWeight: '600', letterSpacing: '0.2px' }}>Executive Audio Briefing</h4>
+                <p style={{ margin: 0, fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '230px' }}>
+                  {tender.name}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => {
+                if (audioRef.current) {
+                  audioRef.current.pause();
+                  audioRef.current.src = '';
+                  audioRef.current = null;
+                }
+                setAudioCreated(false);
+                setAudioPlaying(false);
+                setAudioProgress(0);
+                setAudioDuration(0);
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                padding: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%'
+              }}
+              className="hover-bg"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Seeker / Controls */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={() => {
+                if (audioRef.current) {
+                  if (audioPlaying) {
+                    audioRef.current.pause();
+                    setAudioPlaying(false);
+                  } else {
+                    audioRef.current.play().catch(err => console.error(err));
+                    setAudioPlaying(true);
+                  }
+                }
+              }}
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--primary)',
+                border: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#000000',
+                cursor: 'pointer',
+                flexShrink: 0,
+                boxShadow: '0 4px 10px rgba(16, 185, 129, 0.3)',
+                transition: 'transform 0.2s'
+              }}
+              className="play-btn-hover"
+            >
+              {audioPlaying ? <Pause size={18} fill="#000000" /> : <Play size={18} fill="#000000" style={{ marginLeft: '2px' }} />}
+            </button>
+
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <input
+                type="range"
+                min={0}
+                max={audioDuration || 100}
+                value={audioProgress}
+                onChange={handleSeekAudio}
+                style={{
+                  width: '100%',
+                  accentColor: 'var(--primary)',
+                  height: '4px',
+                  borderRadius: '2px',
+                  cursor: 'pointer',
+                  background: 'rgba(255, 255, 255, 0.1)',
+                  outline: 'none'
+                }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: 'var(--text-muted)' }}>
+                <span>{formatTime(audioProgress)}</span>
+                <span>{formatTime(audioDuration)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Simple Animated Waveform when playing */}
+          {audioPlaying && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '3px', height: '14px', alignItems: 'center', marginTop: '4px' }}>
+              <div className="audio-bar" style={{ width: '2.5px', height: '6px', backgroundColor: 'var(--primary)', borderRadius: '1.5px', animation: 'bounceBar 0.8s ease-in-out infinite alternate' }} />
+              <div className="audio-bar" style={{ width: '2.5px', height: '12px', backgroundColor: 'var(--primary)', borderRadius: '1.5px', animation: 'bounceBar 0.5s ease-in-out infinite alternate 0.1s' }} />
+              <div className="audio-bar" style={{ width: '2.5px', height: '4px', backgroundColor: 'var(--primary)', borderRadius: '1.5px', animation: 'bounceBar 0.7s ease-in-out infinite alternate 0.2s' }} />
+              <div className="audio-bar" style={{ width: '2.5px', height: '10px', backgroundColor: 'var(--primary)', borderRadius: '1.5px', animation: 'bounceBar 0.6s ease-in-out infinite alternate 0.3s' }} />
+              <div className="audio-bar" style={{ width: '2.5px', height: '8px', backgroundColor: 'var(--primary)', borderRadius: '1.5px', animation: 'bounceBar 0.4s ease-in-out infinite alternate 0.4s' }} />
+            </div>
+          )}
+        </div>
+      )}
+
       <style>{`
+        .play-btn-hover:hover {
+          transform: scale(1.05);
+        }
+        .hover-bg:hover {
+          background-color: rgba(255, 255, 255, 0.08) !important;
+        }
         .clause-item:hover .comment-toggle-btn {
           color: var(--primary) !important;
           opacity: 1 !important;

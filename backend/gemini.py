@@ -389,4 +389,38 @@ Return your response strictly as a single JSON object with the following schema:
                 ]
             }
 
+    def generate_audio_briefing_script(self, tender_name: str, tender_analysis: dict) -> str:
+        """
+        Generates a natural-sounding, spoken podcast script for a news briefing anchor
+        summarizing the key points of the tender analysis.
+        """
+        analysis_summary = json.dumps(tender_analysis, indent=2)
+        
+        prompt = f"""
+You are a professional corporate news briefing anchor or senior podcast host summarizing a new procurement project.
+Below is the structured analysis of the tender/RFP: "{tender_name}".
+
+Tender Details:
+{analysis_summary}
+
+Please write a conversational, engaging, and concise 1.5 to 2-minute news briefing podcast script. 
+The audience is a group of busy bid directors and executives who need to hear this briefing while commuting.
+
+Guidelines:
+- Act like a real business news anchor. Start with an engaging intro (e.g. "Welcome to your TenderIQ morning briefing. Today we are looking at the new transformer procurement project from NTPC...").
+- Summarize the critical elements: scope of work, key deadlines, eligibility qualifications, and primary financial securities (EMD) or risks.
+- Keep the language spoken, natural, professional, and smooth.
+- Do NOT include any sound effect descriptions, music cues, bracketed text, or speaker labels (like "Anchor:"). Just write the exact spoken words.
+- Total length should be around 200 to 250 words.
+"""
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config={"temperature": 0.5}
+            )
+            return response.text.strip()
+        except Exception as e:
+            return f"Welcome to your TenderIQ briefing. Today, we are reviewing the tender request for {tender_name}. Key compliance criteria and submission deadlines are loaded on your dashboard. Please consult the checklist for active guidelines."
+
+
 

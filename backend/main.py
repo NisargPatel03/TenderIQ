@@ -575,6 +575,53 @@ def download_proposal_document(request: DownloadProposalRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class AudioBriefRequest(BaseModel):
+    tender_id: str
+
+
+@app.post("/api/tenders/audio-brief")
+def get_audio_briefing(
+    request: AudioBriefRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Generates a conversational podcast script and returns it as a streaming MP3 response."""
+    from fastapi.responses import StreamingResponse
+    from gtts import gTTS
+    import io
+
+    if not gemini_client:
+        raise HTTPException(status_code=500, detail="Gemini API Client is not configured.")
+    
+    try:
+        db = get_supabase(authorization)
+        
+        # Fetch tender name and analysis
+        tender_res = db.table("tenders").select("name, analysis_result").eq("id", request.tender_id).single().execute()
+        if not tender_res.data:
+            raise HTTPException(status_code=404, detail="Tender not found or access denied.")
+        tender = tender_res.data
+        
+        name = tender.get("name", "Active Tender")
+        analysis = tender.get("analysis_result", {})
+        
+        # Generate script using Gemini
+        script = gemini_client.generate_audio_briefing_script(name, analysis)
+        
+        # Convert script to MP3 bytes using gTTS
+        tts = gTTS(text=script, lang='en', tld='com')
+        audio_stream = io.BytesIO()
+        tts.write_to_fp(audio_stream)
+        audio_stream.seek(0)
+        
+        filename = f"briefing_{request.tender_id}.mp3"
+        return StreamingResponse(
+            audio_stream,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": f"inline; filename={filename}"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn
