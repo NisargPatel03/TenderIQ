@@ -749,6 +749,26 @@ def trigger_leads_crawl(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def get_user_id_from_token(auth_header: Optional[str]) -> Optional[str]:
+    import base64
+    import json
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return None
+    try:
+        token = auth_header.split(" ", 1)[1]
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload_b64 = parts[1]
+        padding = "=" * (4 - len(payload_b64) % 4)
+        payload_bytes = base64.b64decode(payload_b64 + padding)
+        payload_data = json.loads(payload_bytes)
+        return payload_data.get("sub")
+    except Exception as e:
+        print(f"Error parsing token: {e}")
+        return None
+
+
 @app.post("/api/leads/{lead_id}/import")
 def import_lead_to_workspace(
     lead_id: str,
@@ -766,9 +786,8 @@ def import_lead_to_workspace(
         if lead.get("imported"):
             raise HTTPException(status_code=400, detail="Lead already imported.")
             
-        # Get active user id
-        user_res = db.auth.get_user()
-        user_id = user_res.user.id if user_res and user_res.user else None
+        # Get active user id from JWT token to satisfy RLS check
+        user_id = get_user_id_from_token(authorization)
         
         # Insert new tender record
         tender_res = db.table("tenders").insert({

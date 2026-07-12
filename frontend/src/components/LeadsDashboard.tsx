@@ -42,8 +42,8 @@ interface LeadsDashboardProps {
 export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) => {
   const { showToast } = useNotification();
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(false);
   const [crawling, setCrawling] = useState(false);
+  const [crawlStep, setCrawlStep] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
   
   // Settings states
@@ -150,6 +150,13 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) =
     }
 
     setCrawling(true);
+    setCrawlStep(0);
+
+    // Increment simulated scan steps every 3.5 seconds
+    const interval = setInterval(() => {
+      setCrawlStep(prev => (prev < 3 ? prev + 1 : prev));
+    }, 3500);
+
     try {
       const baseUrl = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000').replace(/\/$/, '');
       const session = (await supabase.auth.getSession()).data.session;
@@ -172,7 +179,9 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) =
     } catch (err: any) {
       showToast(err.message || "Crawler execution failed.", "error");
     } finally {
+      clearInterval(interval);
       setCrawling(false);
+      setCrawlStep(0);
     }
   };
 
@@ -690,6 +699,125 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) =
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Glassmorphic Portal Scanning Radar Overlay */}
+      {crawling && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          backgroundColor: 'rgba(10, 15, 30, 0.82)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          zIndex: 2000,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          flexDirection: 'column',
+          gap: '24px'
+        }}>
+          {/* Radar Scanning Discs */}
+          <div style={{
+            position: 'relative',
+            width: '120px',
+            height: '120px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(10, 15, 30, 0) 70%)',
+            border: '2px solid rgba(16, 185, 129, 0.25)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            boxShadow: '0 0 35px rgba(16, 185, 129, 0.15)'
+          }}>
+            <Globe size={40} style={{ color: 'var(--primary)', zIndex: 2 }} />
+            <div style={{
+              position: 'absolute',
+              width: '100%',
+              height: '100%',
+              borderRadius: '50%',
+              border: '2px solid var(--primary)',
+              animation: 'ping 2s cubic-bezier(0, 0, 0.2, 1) infinite',
+              opacity: 0.7
+            }}></div>
+          </div>
+
+          <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <h3 style={{ margin: 0, fontSize: '19px', fontWeight: 600, color: '#ffffff', letterSpacing: '0.5px' }}>
+              Scraping Procurement Portals
+            </h3>
+            <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)' }}>
+              Executing search for matching active opportunities
+            </p>
+          </div>
+
+          {/* Stepped Process List */}
+          <div style={{
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '12px',
+            padding: '20px 24px',
+            width: '340px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '14px',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', transition: 'all 0.3s' }}>
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: crawlStep >= 0 ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: crawlStep === 0 ? '0 0 8px var(--primary)' : 'none'
+              }}></span>
+              <span style={{ color: crawlStep >= 0 ? '#ffffff' : 'var(--text-muted)', fontWeight: crawlStep === 0 ? 500 : 400 }}>
+                {crawlStep > 0 ? '✓ Connected to CPPP & GeM' : 'Connecting to government portals...'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', transition: 'all 0.3s' }}>
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: crawlStep >= 1 ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: crawlStep === 1 ? '0 0 8px var(--primary)' : 'none'
+              }}></span>
+              <span style={{ color: crawlStep >= 1 ? '#ffffff' : 'var(--text-muted)', fontWeight: crawlStep === 1 ? 500 : 400 }}>
+                {crawlStep > 1 ? `✓ Searched keywords: "${keywords}"` : crawlStep === 1 ? 'Querying tenders database...' : 'Searching keywords...'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', transition: 'all 0.3s' }}>
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: crawlStep >= 2 ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: crawlStep === 2 ? '0 0 8px var(--primary)' : 'none'
+              }}></span>
+              <span style={{ color: crawlStep >= 2 ? '#ffffff' : 'var(--text-muted)', fontWeight: crawlStep === 2 ? 500 : 400 }}>
+                {crawlStep > 2 ? '✓ Computed matching coefficients' : crawlStep === 2 ? 'Calculating AI compatibility ranks...' : 'Auditing capabilities...'}
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', transition: 'all 0.3s' }}>
+              <span style={{ 
+                width: '8px', 
+                height: '8px', 
+                borderRadius: '50%', 
+                backgroundColor: crawlStep >= 3 ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: crawlStep === 3 ? '0 0 8px var(--primary)' : 'none'
+              }}></span>
+              <span style={{ color: crawlStep >= 3 ? '#ffffff' : 'var(--text-muted)', fontWeight: crawlStep === 3 ? 500 : 400 }}>
+                {crawlStep === 3 ? 'Finalizing alert matrix...' : 'Readying matches...'}
+              </span>
+            </div>
           </div>
         </div>
       )}
