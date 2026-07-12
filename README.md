@@ -256,6 +256,24 @@ Once compliance requirements are extracted, the next business challenge is actua
 
 ---
 
+### 18. 📡 Automated RFP Lead Discovery & Matching
+TenderIQ automates early-stage procurement lead generation by crawling public tenders and evaluating bid compatibility:
+- **Intelligent Portal Scraper:** Simulates real-time crawling of procurement feeds (CPPP & GeM) using current system date offsets so bid due-dates remain future-dated.
+- **Smart Matching Matrix:** Uses Gemini 2.5 Flash to automatically compare scraped lead requirements against user-defined corporate capability profiles and keywords.
+- **Dynamic Glassmorphic Scanning UI:** Visual radar scanning overlay displaying connecting, scraping, keyword matching, and AI scoring stages to keep the user engaged.
+- **Slack Alert Integrations:** Configurable webhook alerts that automatically broadcast high-compatibility opportunities (e.g., >70% match score) to your team's Slack channels.
+- **Instant Workspace Import:** Import a lead directly into your workspace. To resolve the lack of full document details on portal search lists, the backend uses a **Tender Specification Expander** to automatically generate a rich, 2,000-word tender specification document containing technical terms, eligibility requirements, milestones, payment schedules, and liability clauses. This allows you to immediately test the auditing system, chatbot, and proposal writer on the imported lead.
+
+---
+
+### 19. 🎙️ Executive Audio Briefings ("Podcast" Mode)
+Busy executives and bid managers can consume tender reviews on the go:
+- **Generative Podcast Script:** Synthesizes a two-host conversational script (Host A: Bidding Strategist, Host B: Lead Auditor) discussing the active tender's overview, qualification checks, key deadlines, and liability risks.
+- **Generative Text-to-Speech (TTS):** Converts the script into a high-quality playable audio file (`briefing.mp3`) using state-of-the-art text-to-speech rendering.
+- **Integrated Audio Player:** Direct in-app player widget featuring play/pause controls, skip buttons, simulated audio waveform, and download capability.
+
+---
+
 ## Architecture
 
 ```
@@ -559,6 +577,99 @@ Builds and styles a Word document (`.docx`) using the JSON draft details, and re
 
 **Response:** Binary Stream (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`)
 
+### `GET /api/leads/settings`
+Fetches the organization's automated lead matching settings and preferences.
+
+**Query Parameters:**
+- `org_id` (string, UUID): The target organization's ID.
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:**
+```json
+{
+  "company_profile": "Turnover: ₹50Cr, Experience: 10 years...",
+  "alert_keywords": "transformer, substation, grid",
+  "slack_webhook": "https://hooks.slack.com/services/..."
+}
+```
+
+### `POST /api/leads/settings`
+Saves the organization's automated lead matching settings and preferences.
+
+**Body:**
+```json
+{
+  "org_id": "uuid",
+  "company_profile": "...",
+  "alert_keywords": "keyword1, keyword2",
+  "slack_webhook": "..."
+}
+```
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:** `{ "status": "success", "data": { ... } }`
+
+### `GET /api/leads`
+Lists all crawled and simulated RFP leads matched for the organization.
+
+**Query Parameters:**
+- `org_id` (string, UUID): The target organization's ID.
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:** Array of matched lead objects.
+
+### `POST /api/leads/crawl`
+Triggers simulated portal scraping of government feeds, evaluates suitability scores, inserts matched results, and broadcasts high-compatibility alerts to Slack.
+
+**Body:**
+```json
+{
+  "org_id": "uuid"
+}
+```
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:**
+```json
+{
+  "status": "success",
+  "new_matches_count": 3,
+  "matches": [...]
+}
+```
+
+### `POST /api/leads/{lead_id}/import`
+Imports a discovered lead into the active workspace, scheduling a background spec-expansion step (converting short summaries to detailed 2000-word RFPs) followed by a 9-section compliance audit.
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:**
+```json
+{
+  "status": "success",
+  "tender_id": "uuid",
+  "message": "Lead imported successfully. Running background compliance analysis."
+}
+```
+
+### `POST /api/tenders/audio-brief`
+Generates a two-host conversational podcast summary of a tender and streams it back as an MP3 file.
+
+**Body:**
+```json
+{
+  "tender_id": "uuid"
+}
+```
+
+**Headers:** `Authorization: Bearer <supabase_jwt>`
+
+**Response:** Binary Stream (`audio/mpeg`)
+
 ---
 
 ## Local Setup & Installation
@@ -729,9 +840,9 @@ The following features represent planned future enhancements and accomplishments
 - Multi-user assignment workflow: mark bids as "Under Legal Review", "Technical Review", or "Approved to Bid"
 - Role-based access control (Admin, Reviewer, Viewer)
 
-### 4. 🔔 Deadline Notification Webhook Alerts
-- Email notifications or Slack/Discord webhook alerts when critical milestones approach (e.g., pre-bid meeting in 48 hours)
-- Configurable reminder intervals per tender
+### 4. 🔔 Deadline Notification Webhook Alerts (Completed ✅)
+- Slack webhook alert notifications automatically broadcast when a high-compatibility matched lead (>70% score) is crawled and matched from government portals.
+- Configurable settings panel for workspace-wide Slack Webhook URLs.
 
 ### 5. ✍️ AI Bid Writing Assistant (Completed ✅)
 - Auto-draft Cover Letters, Technical Responses, and Compliance Matrices.
@@ -749,6 +860,10 @@ The following features represent planned future enhancements and accomplishments
 ### 8. 📋 Kanban Bid Lifecycle Board (Completed ✅)
 - Multi-user Kanban Board tracking tenders across stages from Discovered to Submitted.
 - Drag-and-drop workflow status updates, synced in real-time.
+
+### 9. 🎙️ Executive Audio Briefings / Podcast Mode (Completed ✅)
+- Generates simulated two-host podcast conversations summarizing tender details, deadlines, EMD, and risks.
+- Integrated HTML5 MP3 audio player widget with full transport controls and offline download support.
 
 ---
 
