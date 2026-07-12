@@ -481,7 +481,6 @@ function App() {
               <div style={{ flex: 1, overflowY: 'auto' }}>
                 <LeadsDashboard
                   activeOrgId={activeOrgId}
-                  activeOrgName={orgs.find(o => o.id === activeOrgId)?.name || 'Active Workspace'}
                 />
               </div>
             )}

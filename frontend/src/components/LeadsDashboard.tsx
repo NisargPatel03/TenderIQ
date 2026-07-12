@@ -5,10 +5,6 @@ import {
   Settings, 
   RefreshCw, 
   Import, 
-  Briefcase, 
-  Bell, 
-  Slack, 
-  AlertCircle, 
   CheckCircle, 
   Globe, 
   DollarSign, 
@@ -19,6 +15,12 @@ import {
   HelpCircle 
 } from 'lucide-react';
 import { useNotification } from './NotificationProvider';
+
+const SlackIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+    <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52-2.523 2.528 2.528 0 0 1-2.522-2.523 2.528 2.528 0 0 1 2.522-2.52h2.52v2.52zm1.261 0a2.528 2.528 0 0 1 2.52-2.52h5.043a2.528 2.528 0 0 1 2.522 2.52v5.042a2.528 2.528 0 0 1-2.522 2.52H8.823a2.528 2.528 0 0 1-2.52-2.52v-5.042zM8.823 5.043a2.528 2.528 0 0 1 2.52-2.522 2.528 2.528 0 0 1 2.522 2.522v2.52h-2.522a2.528 2.528 0 0 1-2.52-2.52zm0 1.261a2.528 2.528 0 0 1 2.52 2.52v5.043a2.528 2.528 0 0 1-2.522 2.522H3.78a2.528 2.528 0 0 1-2.522-2.522V8.824a2.528 2.528 0 0 1 2.522-2.52h5.043zm10.135 3.761a2.528 2.528 0 0 1 2.522-2.52 2.528 2.528 0 0 1 2.52 2.52v2.52h-2.52a2.528 2.528 0 0 1-2.522-2.52zm-1.262 0a2.528 2.528 0 0 1-2.52 2.52h-5.043a2.528 2.528 0 0 1-2.522-2.52V3.78a2.528 2.528 0 0 1 2.522-2.522h5.043a2.528 2.528 0 0 1 2.52 2.522v5.043zm-3.78 10.134a2.528 2.528 0 0 1-2.52 2.522 2.528 2.528 0 0 1-2.522-2.522v-2.52h2.522a2.528 2.528 0 0 1 2.52 2.52zm0-1.261a2.528 2.528 0 0 1-2.52-2.52v-5.043a2.528 2.528 0 0 1 2.522-2.522h5.043a2.528 2.528 0 0 1 2.522 2.522v5.043a2.528 2.528 0 0 1-2.522 2.52z"/>
+  </svg>
+);
 
 interface Lead {
   id: string;
@@ -35,10 +37,9 @@ interface Lead {
 
 interface LeadsDashboardProps {
   activeOrgId: string | null;
-  activeOrgName: string;
 }
 
-export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId, activeOrgName }) => {
+export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) => {
   const { showToast } = useNotification();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(false);
@@ -143,7 +144,7 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId, act
   const handleTriggerCrawl = async () => {
     if (!activeOrgId) return;
     if (!profileText.trim() && !keywords.trim()) {
-      showToast("Please save your company profile or keywords first to run customized matching.", "warning");
+      showToast("Please save your company profile or keywords first to run customized matching.", "info");
       setShowSettings(true);
       return;
     }
@@ -457,7 +458,9 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId, act
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   Search Keywords
-                  <HelpCircle size={12} style={{ color: 'var(--text-muted)' }} title="Comma-separated keywords matching tender portals (e.g. transformer, solar, installation)" />
+                  <span title="Comma-separated keywords matching tender portals (e.g. transformer, solar, installation)" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    <HelpCircle size={12} style={{ color: 'var(--text-muted)', cursor: 'help' }} />
+                  </span>
                 </label>
                 <input 
                   type="text"
@@ -505,7 +508,7 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId, act
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Slack size={13} style={{ color: '#E01E5A' }} /> Slack Integration Webhook
+                  <SlackIcon style={{ width: '13px', height: '13px', color: '#E01E5A' }} /> Slack Integration Webhook
                 </label>
                 <input 
                   type="url"
