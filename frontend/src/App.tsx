@@ -6,10 +6,11 @@ import type { Tender } from './components/Sidebar';
 import { UploadZone } from './components/UploadZone';
 import { TenderDetail } from './components/TenderDetail';
 import { ChatBot } from './components/ChatBot';
-import { FolderOpen, FileCheck, Sparkles, CheckCircle2, Menu, X, Columns } from 'lucide-react';
+import { FolderOpen, FileCheck, Sparkles, CheckCircle2, Menu, X, Columns, Globe } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { WorkspaceSettingsModal } from './components/WorkspaceSettingsModal';
 import { KanbanBoard } from './components/KanbanBoard';
+import { LeadsDashboard } from './components/LeadsDashboard';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -24,7 +25,7 @@ function App() {
   const [orgs, setOrgs] = useState<Array<{ id: string; name: string }>>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [showTeamModal, setShowTeamModal] = useState(false);
-  const [activeDashboardTab, setActiveDashboardTab] = useState<'upload' | 'kanban'>('upload');
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'upload' | 'kanban' | 'leads'>('upload');
 
   // 1. Listen to Auth State changes
   useEffect(() => {
@@ -399,6 +400,25 @@ function App() {
                 >
                   <Columns size={14} /> Kanban Bid Board
                 </button>
+                <button
+                  onClick={() => setActiveDashboardTab('leads')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: activeDashboardTab === 'leads' ? 'var(--bg-tertiary)' : 'transparent',
+                    color: activeDashboardTab === 'leads' ? '#ffffff' : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <Globe size={14} /> Automated Leads
+                </button>
               </div>
             </div>
 
@@ -445,7 +465,7 @@ function App() {
                   activeOrgId={activeOrgId}
                 />
               </div>
-            ) : (
+            ) : activeDashboardTab === 'kanban' ? (
               <div style={{ flex: 1, height: 'calc(100% - 60px)', overflow: 'hidden' }}>
                 <KanbanBoard
                   tenders={tenders}
@@ -455,6 +475,13 @@ function App() {
                   }}
                   onDeleteTender={handleDeleteTender}
                   onTenderStageChange={handleTenderStageChange}
+                />
+              </div>
+            ) : (
+              <div style={{ flex: 1, overflowY: 'auto' }}>
+                <LeadsDashboard
+                  activeOrgId={activeOrgId}
+                  activeOrgName={orgs.find(o => o.id === activeOrgId)?.name || 'Active Workspace'}
                 />
               </div>
             )}

@@ -423,4 +423,61 @@ WITH CHECK (
 );
 
 
+-- ─── AUTOMATED RFP LEADS GENERATION ──────────────────────────────────────────
+
+-- Add columns to organizations table
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='company_profile') THEN
+        ALTER TABLE public.organizations ADD COLUMN company_profile TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='alert_keywords') THEN
+        ALTER TABLE public.organizations ADD COLUMN alert_keywords TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='slack_webhook') THEN
+        ALTER TABLE public.organizations ADD COLUMN slack_webhook TEXT;
+    END IF;
+END $$;
+
+-- Create Crawled Tenders Table
+CREATE TABLE IF NOT EXISTS public.crawled_tenders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id UUID REFERENCES public.organizations(id) ON DELETE CASCADE NOT NULL,
+    title TEXT NOT NULL,
+    portal_name TEXT NOT NULL,
+    tender_value TEXT,
+    deadline TIMESTAMP WITH TIME ZONE,
+    description TEXT,
+    compatibility_score INT,
+    compatibility_reason TEXT,
+    imported BOOLEAN DEFAULT FALSE NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL
+);
+
+-- Enable RLS
+ALTER TABLE public.crawled_tenders ENABLE ROW LEVEL SECURITY;
+
+-- Create Policies
+DROP POLICY IF EXISTS "Users can view crawled tenders" ON public.crawled_tenders;
+DROP POLICY IF EXISTS "Users can manage crawled tenders" ON public.crawled_tenders;
+
+CREATE POLICY "Users can view crawled tenders"
+ON public.crawled_tenders FOR SELECT
+TO authenticated
+USING (
+    public.is_org_member(org_id, auth.uid())
+);
+
+CREATE POLICY "Users can manage crawled tenders"
+ON public.crawled_tenders FOR ALL
+TO authenticated
+USING (
+    public.is_org_member(org_id, auth.uid())
+)
+WITH CHECK (
+    public.is_org_member(org_id, auth.uid())
+);
+
+
+
 

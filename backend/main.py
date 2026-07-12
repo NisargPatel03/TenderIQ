@@ -574,7 +574,6 @@ def download_proposal_document(request: DownloadProposalRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 class AudioBriefRequest(BaseModel):
     tender_id: str
 
@@ -619,6 +618,192 @@ def get_audio_briefing(
             media_type="audio/mpeg",
             headers={"Content-Disposition": f"inline; filename={filename}"}
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── LEAD GENERATION / AUTOMATED RFP TRACKING SCHEMAS & ENDPOINTS ────────────
+
+class SettingsRequest(BaseModel):
+    org_id: str
+    company_profile: str
+    alert_keywords: str
+    slack_webhook: Optional[str] = ""
+
+
+class CrawlRequest(BaseModel):
+    org_id: str
+
+
+@app.get("/api/leads/settings")
+def get_leads_settings(
+    org_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Fetches organization matching settings."""
+    try:
+        db = get_supabase(authorization)
+        res = db.table("organizations").select("company_profile, alert_keywords, slack_webhook").eq("id", org_id).single().execute()
+        return res.data or {"company_profile": "", "alert_keywords": "", "slack_webhook": ""}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/leads/settings")
+def save_leads_settings(
+    request: SettingsRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Saves organization matching settings."""
+    try:
+        db = get_supabase(authorization)
+        res = db.table("organizations").update({
+            "company_profile": request.company_profile,
+            "alert_keywords": request.alert_keywords,
+            "slack_webhook": request.slack_webhook
+        }).eq("id", request.org_id).execute()
+        return {"status": "success", "data": res.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/leads")
+def get_crawled_leads(
+    org_id: str,
+    authorization: Optional[str] = Header(None)
+):
+    """Lists crawled RFP leads for the organization."""
+    try:
+        db = get_supabase(authorization)
+        res = db.table("crawled_tenders").select("*").eq("org_id", org_id).order("created_at", desc=True).execute()
+        return res.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/leads/crawl")
+def trigger_leads_crawl(
+    request: CrawlRequest,
+    authorization: Optional[str] = Header(None)
+):
+    """Simulates crawling government portals, evaluates suitability, and alerts Slack."""
+    from crawler import simulate_government_portal_crawl
+    from matcher import match_tenders_to_profile
+    from notifier import send_slack_alert
+
+    try:
+        db = get_supabase(authorization)
+        
+        # 1. Fetch organization settings and details
+        org_res = db.table("organizations").select("name, company_profile, alert_keywords, slack_webhook").eq("id", request.org_id).single().execute()
+        if not org_res.data:
+            raise HTTPException(status_code=404, detail="Organization not found.")
+        org = org_res.data
+        
+        keywords_str = org.get("alert_keywords") or ""
+        profile = org.get("company_profile") or ""
+        slack_url = org.get("slack_webhook") or ""
+        org_name = org.get("name") or "Your Organization"
+        
+        keywords = [k.strip() for k in keywords_str.split(",") if k.strip()]
+        
+        # 2. Run crawler simulation
+        crawled_items = simulate_government_portal_crawl(keywords)
+        
+        # 3. Match suitability
+        matches = match_tenders_to_profile(crawled_items, profile)
+        
+        # 4. Insert matched results into DB
+        inserted_matches = []
+        for m in matches:
+            # Check if this lead already exists for this org
+            existing = db.table("crawled_tenders").select("id").eq("org_id", request.org_id).eq("title", m["title"]).execute()
+            if existing.data:
+                continue
+                
+            insert_data = {
+                "org_id": request.org_id,
+                "title": m["title"],
+                "portal_name": m["portal_name"],
+                "tender_value": m["tender_value"],
+                "deadline": m["deadline"],
+                "description": m["description"],
+                "compatibility_score": m["compatibility_score"],
+                "compatibility_reason": m["compatibility_reason"],
+                "imported": False
+            }
+            res = db.table("crawled_tenders").insert(insert_data).execute()
+            if res.data:
+                inserted_matches.append(res.data[0])
+                
+        # 5. Dispatch Slack notifications for high matches
+        if inserted_matches and slack_url:
+            send_slack_alert(slack_url, org_name, inserted_matches)
+            
+        return {
+            "status": "success",
+            "new_matches_count": len(inserted_matches),
+            "matches": inserted_matches
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/leads/{lead_id}/import")
+def import_lead_to_workspace(
+    lead_id: str,
+    background_tasks: BackgroundTasks,
+    authorization: Optional[str] = Header(None)
+):
+    """Imports a crawled lead as an active analyzed tender in the workspace."""
+    try:
+        db = get_supabase(authorization)
+        lead_res = db.table("crawled_tenders").select("*").eq("id", lead_id).single().execute()
+        if not lead_res.data:
+            raise HTTPException(status_code=404, detail="Lead not found.")
+        lead = lead_res.data
+        
+        if lead.get("imported"):
+            raise HTTPException(status_code=400, detail="Lead already imported.")
+            
+        # Get active user id
+        user_res = db.auth.get_user()
+        user_id = user_res.user.id if user_res and user_res.user else None
+        
+        # Insert new tender record
+        tender_res = db.table("tenders").insert({
+            "user_id": user_id,
+            "org_id": lead.get("org_id"),
+            "name": lead.get("title"),
+            "status": "Processing",
+            "file_size": len(lead.get("description", "").encode("utf-8")),
+            "page_count": 1,
+            "kanban_stage": "Discovered"
+        }).execute()
+        
+        if not tender_res.data:
+            raise HTTPException(status_code=500, detail="Failed to create tender.")
+            
+        new_tender = tender_res.data[0]
+        new_tender_id = new_tender.get("id")
+        
+        # Schedule background tender analysis
+        background_tasks.add_task(
+            process_tender_background,
+            tender_id=new_tender_id,
+            files_data=None,
+            raw_text=lead.get("description", ""),
+            authorization=authorization
+        )
+        
+        # Mark lead as imported
+        db.table("crawled_tenders").update({"imported": True}).eq("id", lead_id).execute()
+        
+        return {
+            "status": "success",
+            "tender_id": new_tender_id,
+            "message": "Lead imported successfully. Running background compliance analysis."
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
