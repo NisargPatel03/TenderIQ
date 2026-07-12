@@ -57,6 +57,9 @@ def simulate_government_portal_crawl(keywords: List[str]) -> List[Dict]:
     
     # Try using Gemini to generate highly tailored mock tenders matching these keywords
     try:
+        from datetime import datetime
+        today_str = datetime.utcnow().strftime("%B %d, %Y")
+        
         gemini_key = os.environ.get("GEMINI_API_KEY")
         if not gemini_key:
             raise ValueError("GEMINI_API_KEY not configured")
@@ -73,7 +76,7 @@ def simulate_government_portal_crawl(keywords: List[str]) -> List[Dict]:
         1. Title: Professional procurement title (e.g. "Procurement of...", "EPC Contract for...").
         2. Portal Name: Pick one of "Central Public Procurement Portal (CPPP)", "Government e-Marketplace (GeM)", "National Tenders Portal", or regional state portals.
         3. Tender Value: A realistic project estimate (e.g., in Lakhs/Crores INR or USD).
-        4. Deadline: A ISO timestamp set in the future (between 30 to 90 days from today).
+        4. Deadline: A ISO timestamp set in the future (between 30 to 90 days from today, which is {today_str}).
         5. Description: A paragraph describing the project scope, technical ratings, required certifications (e.g. ISO 9001), and eligibility criteria. Make sure it explicitly uses one or more of the keywords.
         
         Return the result ONLY as a valid JSON array of objects with the exact keys:
