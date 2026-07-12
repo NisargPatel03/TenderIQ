@@ -22,6 +22,12 @@ const SlackIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
+const formatBoldText = (text: string) => {
+  if (!text) return '';
+  const parts = text.split('**');
+  return parts.map((part, i) => i % 2 === 1 ? <strong key={i} style={{ color: 'var(--text-primary)', fontWeight: 650 }}>{part}</strong> : part);
+};
+
 interface Lead {
   id: string;
   title: string;
@@ -42,6 +48,7 @@ interface LeadsDashboardProps {
 export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) => {
   const { showToast } = useNotification();
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [loading, setLoading] = useState(false);
   const [crawling, setCrawling] = useState(false);
   const [crawlStep, setCrawlStep] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
@@ -413,7 +420,7 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) =
                         WebkitLineClamp: 1,
                         WebkitBoxOrient: 'vertical',
                         lineHeight: '1.4'
-                      }}>{lead.compatibility_reason}</p>
+                      }}>{formatBoldText(lead.compatibility_reason)}</p>
                     </div>
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flexShrink: 0 }}>
@@ -636,7 +643,7 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) =
                     }}>{selectedLead.compatibility_score}% Score</span>
                   </div>
                   <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-                    {selectedLead.compatibility_reason}
+                    {formatBoldText(selectedLead.compatibility_reason)}
                   </p>
                 </div>
               </div>
@@ -676,7 +683,7 @@ export const LeadsDashboard: React.FC<LeadsDashboardProps> = ({ activeOrgId }) =
                   color: 'var(--text-secondary)',
                   whiteSpace: 'pre-line'
                 }}>
-                  {selectedLead.description}
+                  {formatBoldText(selectedLead.description)}
                 </div>
               </div>
 
